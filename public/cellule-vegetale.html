@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cellule végétale 3D</title>
+<meta name="description" content="Modele 3D interactif de la cellule vegetale : cellule, chloroplaste, membrane thylakoidale.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#120720;overflow:hidden}
+*{box-sizing:border-box}
+a{color:#5eead4;text-decoration:none}
+a:hover{color:#8ff5e0}
+@keyframes cardIn{from{opacity:0}to{opacity:1}}
+@keyframes odRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* --- Glissieres : design repris tel quel de la cellule animale (index.html) ------
+   Meme piste arrondie, meme pouce carre a trois barres, meme accent turquoise.
+   La variante .vert sert au reglage de coupe attache aux fiches.                  */
+.dslider { position:relative; height:30px; margin-top:8px; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; }
+.dslider .dtrack { position:absolute; left:0; right:0; top:2px; height:26px; border-radius:10px; background:rgba(159,179,198,.16); overflow:hidden; }
+.dslider .dfill { position:absolute; left:0; top:0; bottom:0; border-radius:10px; width:0%;
+  background:linear-gradient(90deg, rgba(127,227,210,.45), #7fe3d2); }
+.dslider .dthumb { position:absolute; top:0; left:0%; width:30px; height:30px; margin-left:-15px; border-radius:9px;
+  background:#eaf6f2; border:1px solid #7fe3d2; box-shadow:0 5px 14px -4px rgba(0,0,0,.55), 0 0 0 4px rgba(127,227,210,.14);
+  display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.dslider .dthumb i { width:2px; height:12px; border-radius:2px; background:rgba(12,26,40,.32);
+  box-shadow:5px 0 0 rgba(12,26,40,.32), -5px 0 0 rgba(12,26,40,.32); }
+.dslider.vert { height:auto; margin-top:0; width:30px; }
+.dslider.vert .dtrack { left:2px; right:2px; top:0; bottom:0; width:auto; height:auto; }
+.dslider.vert .dfill { left:0; right:0; top:auto; bottom:0; width:auto; height:0%;
+  background:linear-gradient(0deg, rgba(127,227,210,.45), #7fe3d2); }
+.dslider.vert .dthumb { top:auto; bottom:0%; left:50%; margin-left:-15px; margin-bottom:-15px; }
+.dslider.vert .dthumb i { width:12px; height:2px;
+  box-shadow:0 5px 0 rgba(12,26,40,.32), 0 -5px 0 rgba(12,26,40,.32); }
+
+/* Colonne de coupe attachee au flanc droit d'une fiche */
+.pcut { position:absolute; left:100%; top:0; bottom:0; margin-left:7px; width:46px;
+  border-radius:13px; background:rgba(15,26,38,.94); border:1px solid rgba(127,227,210,.24);
+  box-shadow:0 14px 40px rgba(0,0,0,.5);
+  display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 0 9px; }
+.pcut-cap { font-family:'IBM Plex Mono',monospace; font-size:8px; line-height:1.2; letter-spacing:.06em;
+  text-transform:uppercase; text-align:center; color:rgba(127,227,210,.82); padding:0 3px; }
+.pcut-ico { font-size:12px; line-height:1; color:rgba(127,227,210,.75); }
+.pcut-val { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.02em; color:#7fe3d2; }
+.pcut-slider { flex:1 1 auto; min-height:92px; }
+</style>
+</style>
+<!-- three servi en local, comme la page musculaire : la page doit marcher hors-ligne.
+     public/ n'est pas traite par Vite, d'ou l'import map plutot qu'un bundle. -->
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+
+<div id="root"></div>
+
+<!-- Gabarit declaratif, repris de l'export Claude Design. Les formes utilisees
+     ({{ }}, sc-if, sc-for, ref, sc-camel-on-*) sont interpretees par ./vendor/dc-runtime.js,
+     qui remplace le support.js non distribuable. Cette page n'est plus un bundle. -->
+<template id="tpl">
+<div ref="{{ rootRef }}" style="position:relative;width:100vw;height:100vh;overflow:hidden;background:radial-gradient(115% 95% at 60% 42%, #2c1546 0%, #1c0d2e 46%, #110620 100%);color:#e9e3f2;font-family:'IBM Plex Sans',system-ui,sans-serif;user-select:none">
+
+  <div data-cell-host="1" ref="{{ hostRef }}" style="position:absolute;inset:0;z-index:1;cursor:grab"></div>
+  <div data-cell-fade="1" ref="{{ fadeRef }}" style="position:absolute;inset:0;z-index:3;background:#150a24;opacity:0;pointer-events:none;transition:opacity .2s linear"></div>
+
+  <div style="position:absolute;top:20px;left:22px;z-index:4;display:flex;align-items:center;gap:14px;padding:11px 16px 12px;border:1px solid rgba(150,220,205,.16);border-radius:9px;background:rgba(16,10,26,.5);backdrop-filter:blur(8px)">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:#d7f3ea">{{ levelName }}</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:rgba(233,227,242,.42)">{{ levelSize }}</div>
+    </div>
+    <div style="width:5px;height:5px;border-radius:50%;background:#5eead4;box-shadow:0 0 10px rgba(94,234,212,.7)"></div>
+  </div>
+
+  <div style="position:absolute;left:0;top:0;bottom:0;width:420px;z-index:2;pointer-events:none;background:linear-gradient(90deg,rgba(15,7,26,.92) 0%,rgba(15,7,26,.86) 40%,rgba(15,7,26,.5) 72%,rgba(15,7,26,0) 100%)"></div>
+
+  <div style="position:absolute;left:32px;top:50%;transform:translateY(-50%);z-index:4;display:flex;flex-direction:column;align-items:flex-start;pointer-events:none;gap:0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.24em;text-transform:uppercase;color:rgba(233,227,242,.34);margin-bottom:34px">Profondeur d'exploration</div>
+    <div style="position:relative;display:flex;flex-direction:column;gap:44px">
+      <div style="position:absolute;left:5px;top:9px;bottom:9px;width:1px;background:linear-gradient(180deg,rgba(94,234,212,.55),rgba(94,234,212,.10))"></div>
+
+      <div sc-camel-on-click="{{ goL1 }}" style="display:flex;align-items:flex-start;gap:22px;cursor:pointer;pointer-events:auto;position:relative">
+        <div style="width:11px;height:11px;border-radius:50%;margin-top:9px;flex:none;background:{{ d1bg }};border:1px solid {{ d1br }};box-shadow:{{ d1sh }}"></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:300;color:{{ n1 }};letter-spacing:.04em;padding-top:2px">01</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="font-family:Spectral,Georgia,serif;font-size:22px;font-weight:400;letter-spacing:.005em;color:{{ t1 }}">Cellule végétale</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;color:{{ s1 }}">≈ 50 µm</div>
+        </div>
+      </div>
+
+      <div sc-camel-on-click="{{ goL2 }}" style="display:flex;align-items:flex-start;gap:22px;cursor:pointer;pointer-events:auto;position:relative">
+        <div style="width:11px;height:11px;border-radius:50%;margin-top:9px;flex:none;background:{{ d2bg }};border:1px solid {{ d2br }};box-shadow:{{ d2sh }}"></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:300;color:{{ n2 }};letter-spacing:.04em;padding-top:2px">02</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="font-family:Spectral,Georgia,serif;font-size:22px;font-weight:400;letter-spacing:.005em;color:{{ t2 }}">Chloroplaste</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;color:{{ s2 }}">≈ 5 µm</div>
+        </div>
+      </div>
+
+      <div sc-camel-on-click="{{ goL3 }}" style="display:flex;align-items:flex-start;gap:22px;cursor:pointer;pointer-events:auto;position:relative">
+        <div style="width:11px;height:11px;border-radius:50%;margin-top:9px;flex:none;background:{{ d3bg }};border:1px solid {{ d3br }};box-shadow:{{ d3sh }}"></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:300;color:{{ n3 }};letter-spacing:.04em;padding-top:2px">03</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="font-family:Spectral,Georgia,serif;font-size:22px;font-weight:400;letter-spacing:.005em;color:{{ t3 }}">Membrane thylakoïdale</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;color:{{ s3 }}">≈ 20 nm</div>
+        </div>
+      </div>
+    </div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:rgba(233,227,242,.28);margin-top:34px">↓&nbsp;&nbsp;cliquez une strate pour plonger &middot; un organite pour l'inspecter · glissez pour orbiter</div>
+  </div>
+
+  <!-- HUD des coins — maquette « Cellule » : trois boutons carrés (↻ rotation ·
+       ◑ coupe · ↔ écartement), le corps du réglage tombe dessous, puis le bouton
+       ambre de l'atlas. Même registre que la cellule animale. -->
+  <div style="position:absolute;top:44px;right:44px;z-index:4;display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+    <div style="display:flex;gap:7px">
+      <div sc-camel-on-click="{{ tRot }}" title="Rotation automatique" style="width:30px;height:30px;border-radius:9px;background:{{ rotBtnBg }};border:1px solid {{ rotBtnBr }};display:grid;place-items:center;font:400 12px/1.3 'IBM Plex Mono',monospace;color:{{ rotBtnFg }};cursor:pointer;transition:background .18s,border-color .18s,color .16s">↻</div>
+      <div sc-camel-on-click="{{ tCut }}" title="Coupe du modèle" style="width:30px;height:30px;border-radius:9px;background:{{ cutBtnBg }};border:1px solid {{ cutBtnBr }};display:grid;place-items:center;font:400 12px/1.3 'IBM Plex Mono',monospace;color:{{ cutBtnFg }};cursor:pointer;transition:background .18s,border-color .18s,color .16s">◑</div>
+      <div sc-camel-on-click="{{ tSpread }}" title="Écartement des organites" style="width:30px;height:30px;border-radius:9px;background:{{ spBtnBg }};border:1px solid {{ spBtnBr }};display:grid;place-items:center;font:400 12px/1.3 'IBM Plex Mono',monospace;color:{{ spBtnFg }};cursor:pointer;transition:background .18s,border-color .18s,color .16s">↔</div>
+    </div>
+    <div style="font:400 9.5px/1.3 'IBM Plex Mono',monospace;color:rgba(160,200,220,.35)">R · C · É</div>
+    <div style="margin-top:6px;padding:9px 14px;border-radius:9px;background:rgba(240,163,94,.16);border:1px solid rgba(240,163,94,.36);backdrop-filter:blur(14px);font:500 11.5px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:#f5c295;cursor:pointer">Atlas de la photosynthèse ↗</div>
+
+    <sc-if value="{{ showRot }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:6px;width:300px;padding:14px 15px;border-radius:13px;background:rgba(15,26,38,.9);border:1px solid rgba(255,255,255,.15);backdrop-filter:blur(18px);box-shadow:0 20px 50px rgba(0,0,0,.35);animation:odRise .42s cubic-bezier(.22,.9,.24,1) both">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div sc-camel-on-click="{{ toggleRot }}" style="width:34px;height:18px;border-radius:9px;position:relative;cursor:pointer;flex:none;background:{{ rotTrack }};transition:background .2s">
+            <div style="position:absolute;top:2px;left:{{ rotKnob }};width:14px;height:14px;border-radius:50%;background:#eaf7f3;transition:left .18s ease"></div>
+          </div>
+          <div class="dslider" sc-camel-on-pointer-down="{{ onRotSlide }}" style="flex:1;margin-top:0">
+            <div class="dtrack"><div class="dfill" style="width:{{ rotPct }}"></div></div>
+            <div class="dthumb" style="left:{{ rotPct }}"><i></i></div>
+          </div>
+          <div style="font:400 11px/1.3 'IBM Plex Mono',monospace;color:rgba(233,227,242,.5);width:34px;text-align:right">{{ rotLabel }}</div>
+        </div>
+        <div sc-camel-on-click="{{ reset }}" style="margin-top:11px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);font:400 11px/1.3 'IBM Plex Mono',monospace;color:rgba(168,242,226,.75);cursor:pointer">↻&nbsp;&nbsp;réinitialiser la vue</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showCut }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:6px;width:300px;padding:14px 15px;border-radius:13px;background:rgba(15,26,38,.9);border:1px solid rgba(255,255,255,.15);backdrop-filter:blur(18px);box-shadow:0 20px 50px rgba(0,0,0,.35);animation:odRise .42s cubic-bezier(.22,.9,.24,1) both;display:flex;align-items:center;gap:12px">
+        <div style="font:400 9.5px/1.3 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(233,227,242,.36);width:64px">profondeur</div>
+        <div class="dslider" sc-camel-on-pointer-down="{{ onCutSlide }}" style="flex:1;margin-top:0">
+            <div class="dtrack"><div class="dfill" style="width:{{ cutPct }}"></div></div>
+            <div class="dthumb" style="left:{{ cutPct }}"><i></i></div>
+          </div>
+        <div style="font:400 11px/1.3 'IBM Plex Mono',monospace;color:rgba(233,227,242,.5);width:44px;text-align:right">{{ cutLabel }}</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ showSpread }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:6px;width:300px;padding:14px 15px;border-radius:13px;background:rgba(15,26,38,.9);border:1px solid rgba(255,255,255,.15);backdrop-filter:blur(18px);box-shadow:0 20px 50px rgba(0,0,0,.35);animation:odRise .42s cubic-bezier(.22,.9,.24,1) both;display:flex;gap:8px">
+        <div sc-camel-on-click="{{ setCompact }}" style="flex:1;text-align:center;padding:8px 0;border-radius:9px;cursor:pointer;font:400 10.5px/1.3 'IBM Plex Mono',monospace;letter-spacing:.12em;background:{{ cpBg }};border:1px solid {{ cpBr }};color:{{ cpFg }}">compact</div>
+        <div sc-camel-on-click="{{ setExploded }}" style="flex:1;text-align:center;padding:8px 0;border-radius:9px;cursor:pointer;font:400 10.5px/1.3 'IBM Plex Mono',monospace;letter-spacing:.12em;background:{{ exBg }};border:1px solid {{ exBr }};color:{{ exFg }}">éclaté</div>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-for list="{{ cards }}" as="card" hint-placeholder-count="0">
+    <div data-card-id="{{ card.id }}" style="position:absolute;left:0;top:0;z-index:5;width:252px;padding:12px 14px 13px;border-radius:9px;background:rgba(13,10,21,.88);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(14px);box-shadow:0 24px 60px rgba(0,0,0,.55);animation:cardIn .22s ease both">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:8px;height:8px;border-radius:50%;flex:none;background:{{ card.dot }}"></div>
+        <div style="flex:1;font-size:13.5px;font-weight:600;color:#f2eef8">{{ card.name }}</div>
+        <div sc-camel-on-click="{{ card.close }}" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(233,227,242,.45);font-size:13px">×</div>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;color:rgba(233,227,242,.42);margin:3px 0 11px 17px">{{ card.sub }}</div>
+      <div style="display:grid;grid-template-columns:92px 1fr;gap:7px 12px">
+        <sc-for list="{{ card.rows }}" as="row" hint-placeholder-count="3">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(233,227,242,.4);line-height:1.5">{{ row.k }}</div>
+          <div style="font-size:11.5px;color:rgba(242,238,248,.88);line-height:1.45">{{ row.v }}</div>
+        </sc-for>
+      </div>
+      <!-- Reglage de fermeture attache a la fiche, exactement comme dans la cellule
+           animale : une colonne verticale au flanc droit, pas une barre dans le corps
+           de la fiche. Seules la membrane et l'enveloppe nucleaire en portent une. -->
+      <sc-if value="{{ card.hasCut }}" hint-placeholder-val="{{ false }}">
+        <div class="pcut">
+          <span class="pcut-cap">Fermeture<br>{{ card.cutWhat }}</span>
+          <span class="pcut-val">{{ card.cutVal }}</span>
+          <div class="dslider vert pcut-slider" sc-camel-on-pointer-down="{{ card.onCut }}">
+            <div class="dtrack"><div class="dfill" style="height:{{ card.cutPct }}"></div></div>
+            <div class="dthumb" style="bottom:{{ card.cutPct }}"><i></i></div>
+          </div>
+          <span class="pcut-ico">&#9683;</span>
+        </div>
+      </sc-if>
+    </div>
+  </sc-for>
+
+  <div data-cell-tip="1" ref="{{ tipRef }}" style="position:absolute;left:0;top:0;z-index:6;transform:translate(-9999px,-9999px);pointer-events:none;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#dbf7ee;background:rgba(9,7,15,.82);border:1px solid rgba(94,234,212,.26);padding:5px 9px;border-radius:5px;white-space:nowrap"></div>
+
+  <!-- Panneau des organites (maquette « Cellule ») — fermé par défaut : la poignée
+       annonce ce qu'elle contient et invite à la tirer vers le haut. L'ouverture
+       déplie la hauteur (grid-template-rows 0fr → 1fr) pendant que la poignée
+       s'élargit et que le contenu monte en cascade. Identique à la cellule animale. -->
+  <div style="position:absolute;left:50%;bottom:0;z-index:7;width:{{ odWidth }};padding:0 22px {{ odPadBottom }};border-radius:16px 16px 0 0;background:rgba(9,22,31,.94);border:1px solid rgba(255,255,255,.15);border-bottom:none;backdrop-filter:blur(18px);box-shadow:{{ odShadow }};display:flex;flex-direction:column;transform:translate(-50%,0);transition:width .52s cubic-bezier(.22,.9,.24,1), padding-bottom .52s cubic-bezier(.22,.9,.24,1), box-shadow .3s ease">
+    <div sc-camel-on-click="{{ odToggle }}" style="display:flex;flex-direction:column;align-items:stretch;gap:12px;width:100%;padding:14px 4px 4px;cursor:pointer">
+      <div style="align-self:center;width:52px;height:4px;flex:none;border-radius:2px;background:rgba(140,195,220,.35)"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 12px {{ odRowPadBottom }};overflow:hidden;max-height:{{ odRowMax }};opacity:{{ odTxOp }};transition:max-height .52s cubic-bezier(.22,.9,.24,1), opacity .22s ease, padding .52s cubic-bezier(.22,.9,.24,1)">
+        <div style="font:400 16.5px/1.25 Spectral,Georgia,serif;letter-spacing:.004em;color:rgba(226,240,248,.92)">Voir les organites {{ odScope }}</div>
+        <div style="font:500 14px/1 'IBM Plex Mono',ui-monospace,monospace;color:#6ee7cf;flex:none">↑</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-rows:{{ odRows }};transition:grid-template-rows .52s cubic-bezier(.22,.9,.24,1)">
+      <div style="min-height:0;overflow:hidden">
+        <div style="display:flex;flex-direction:column;gap:12px;padding-top:2px;opacity:{{ odInnerOp }};transition:opacity .22s ease">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px">
+            <div style="font:400 9px/1.3 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.22em;text-transform:uppercase;color:rgba(160,200,220,.6)">Organites {{ odScope }}</div>
+            <div style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:rgba(160,200,220,.4)">cliquer = isoler</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <sc-for list="{{ odFams }}" as="fam" hint-placeholder-count="3">
+              <div sc-camel-on-click="{{ fam.pick }}" style="padding:6px 11px;border-radius:12px;cursor:pointer;background:{{ fam.bg }};border:1px solid {{ fam.br }};font:500 11px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:{{ fam.fg }};display:flex;align-items:center;gap:7px;white-space:nowrap;animation:odRise .46s cubic-bezier(.22,.9,.24,1) both;animation-delay:{{ fam.delay }};transition:background .18s,border-color .18s,color .16s">
+                <div style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ fam.dot }}"></div>
+                <div>{{ fam.name }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px">
+            <sc-for list="{{ odItems }}" as="org" hint-placeholder-count="3">
+              <div sc-camel-on-click="{{ org.pick }}" style="padding:10px 11px;border-radius:9px;cursor:pointer;background:{{ org.bg }};border:1px solid rgba(140,195,220,.14);display:flex;flex-direction:column;gap:4px;animation:odRise .46s cubic-bezier(.22,.9,.24,1) both;animation-delay:{{ org.delay }};transition:background .18s,border-color .18s">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ org.dot }}"></div>
+                  <div style="font:500 11.5px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:#eef4fa">{{ org.name }}</div>
+                </div>
+                <div style="font:400 10.5px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:rgba(214,235,246,.7)">{{ org.sub }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:absolute;right:22px;bottom:24px;z-index:4;display:flex;align-items:baseline;gap:8px">
+    <div data-field="1" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:rgba(233,227,242,.62);letter-spacing:.06em">70 µm</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.2em;color:rgba(233,227,242,.3)">CHAMP</div>
+  </div>
+  <div style="position:absolute;right:22px;bottom:12px;z-index:4;width:300px;height:2px;background:rgba(255,255,255,.06);border-radius:1px">
+    <div data-zoombar="1" style="height:100%;width:60%;background:linear-gradient(90deg,rgba(94,234,212,.3),#5eead4);border-radius:1px"></div>
+  </div>
+</div>
+</template>
+
+<script src="./vendor/dc-runtime.js"></script>
+<script type="module">
+  import * as THREE from 'three';
+  window.THREE = THREE;
+</script>
+<script>
+class CelluleVegetale extends DC.Logic {
+  constructor(p) {
+    super(p);
+    this.hostRef = DC.ref();
+    this.rootRef = DC.ref();
+    this.tipRef = DC.ref();
+    this.fadeRef = DC.ref();
+    const S = window.__cellStage || (window.__cellStage = {
+      level: 0, cards: [], row: null, odClosed: true, odFam: 0, cutNuc: 0,
+      rotOn: !!p.autoRotate, rotSpeed: 0.3,
+      cut: typeof p.cut === 'number' ? p.cut : 0.55,
+      spread: p.spread === 'éclaté' ? 1 : 0, resetView: 0
+    });
+    this.S = S;
+    this.state = { tick: 0 };
+    this.LEV = [
+      { name: 'Cellule végétale', size: '≈ 50 µm', tag: 'cellule', field: 70, unit: 'µm', rad: 8.9, phi: 1.1, theta: -0.5, rz: 1.52, clip: true },
+      { name: 'Chloroplaste', size: '≈ 5 µm', tag: 'chloroplaste', field: 12, unit: 'µm', rad: 9.6, phi: 1.02, theta: -0.6, rz: 1.36, clip: true },
+      { name: 'Membrane thylakoïdale', size: '≈ 20 nm', tag: 'thylakoïde', field: 90, unit: 'nm', rad: 9.2, phi: 1.22, theta: -0.42, rz: 1.4, clip: false }
+    ];
+    /* Tiroir des organites : une famille à la fois, comme la cellule animale. */
+    this.FAMS = [
+      [
+        { name: 'Paroi et membranes', ids: ['paroi', 'microfibrille', 'membrane', 'plasmodesme'] },
+        { name: 'Noyau et ribosomes', ids: ['noyau', 'ribosome'] },
+        { name: 'Plastes et énergie', ids: ['chloroplaste', 'mitochondrie', 'peroxysome'] },
+        { name: 'Endomembranes', ids: ['re', 'golgi', 'vacuole'] },
+        { name: 'Réserves et soutien', ids: ['amidon', 'oleosome', 'cytosquelette'] }
+      ],
+      [
+        { name: 'Enveloppe et stroma', ids: ['enveloppe', 'stroma', 'nucleoide'] },
+        { name: 'Thylakoïdes', ids: ['granum', 'thylakoide', 'plastoglobule'] },
+        { name: 'Réserves', ids: ['amidon2'] }
+      ],
+      [
+        { name: 'Membrane', ids: ['bicouche', 'lumen'] },
+        { name: 'Photosystèmes', ids: ['psii', 'psi'] },
+        { name: 'Transporteurs', ids: ['cytb6f', 'plastoquinone', 'atpsynthase'] }
+      ]
+    ];
+    this.SCOPE = ['de la cellule observée', 'du chloroplaste', 'de la membrane thylakoïdale'];
+    this.INFO = {
+      paroi: { name: 'Paroi pectocellulosique', sub: 'squelette externe', dot: '#cfe0a0', rows: [{ k: 'Rôle', v: 'soutien et rigidité' }, { k: 'Composition', v: 'cellulose, pectines' }, { k: 'Épaisseur', v: '0,1 – 10 µm' }] },
+      cytosquelette: { name: 'Cytosquelette', sub: 'microtubules et actine', dot: '#7fd0e8', rows: [{ k: 'Microtubules', v: 'tubuline, réseau cortical' }, { k: 'Actine', v: 'transport des vésicules' }, { k: 'Rôle', v: 'forme et division' }] },
+      microfibrille: { name: 'Microfibrilles de cellulose', sub: 'trame de la paroi', dot: '#d7e79b', rows: [{ k: 'Composition', v: 'chaînes de glucose' }, { k: 'Diamètre', v: '≈ 3 nm' }, { k: 'Orientation', v: 'guidée par les microtubules' }] },
+      oleosome: { name: 'Oléosome', sub: 'réserve lipidique', dot: '#f0cf72', rows: [{ k: 'Contenu', v: 'triglycérides' }, { k: 'Enveloppe', v: 'monocouche + oléosines' }, { k: 'Taille', v: '0,5 – 2 µm' }] },
+      membrane: { name: 'Membrane plasmique', sub: 'barrière sélective', dot: '#74cfae', rows: [{ k: 'Composition', v: 'bicouche de phospholipides' }, { k: 'Transport', v: 'actif et passif' }, { k: 'Position', v: 'plaquée contre la paroi' }] },
+      vacuole: { name: 'Vacuole centrale', sub: 'réservoir sous pression', dot: '#a9c6ef', rows: [{ k: 'Volume', v: '30 – 90 % de la cellule' }, { k: 'Contenu', v: 'eau, ions, pigments' }, { k: 'Rôle', v: 'turgescence, stockage' }] },
+      chloroplaste: { name: 'Chloroplaste', sub: 'usine photosynthétique', dot: '#3f9b5a', rows: [{ k: 'Rôle', v: 'convertir la lumière' }, { k: 'Pigments', v: 'chlorophylle a et b' }, { k: 'Origine', v: 'endosymbiose, ADN propre' }] },
+      noyau: { name: 'Noyau', sub: 'centre génétique', dot: '#8f7ce0', rows: [{ k: 'Contenu', v: 'ADN et histones' }, { k: 'Enveloppe', v: 'double, percée de pores' }, { k: 'Nucléole', v: 'assemble les ribosomes' }] },
+      mitochondrie: { name: 'Mitochondrie', sub: "production d'ATP", dot: '#e58fb5', rows: [{ k: 'Rôle', v: 'respiration cellulaire' }, { k: 'Membranes', v: 'double, crêtes internes' }, { k: 'Nombre', v: 'quelques centaines' }] },
+      golgi: { name: 'Appareil de Golgi', sub: 'tri et expédition', dot: '#e79ac5', rows: [{ k: 'Rôle', v: 'glycosylation, tri' }, { k: 'Produit', v: 'pectines de la paroi' }, { k: 'Sortie', v: 'vésicules' }] },
+      re: { name: 'Réticulum endoplasmique', sub: 'réseau de synthèse', dot: '#f0b6d0', rows: [{ k: 'Rugueux', v: 'synthèse des protéines' }, { k: 'Lisse', v: 'lipides, calcium' }, { k: 'Continuité', v: "lié à l'enveloppe nucléaire" }] },
+      ribosome: { name: 'Ribosomes', sub: 'traduction', dot: '#b39ddb', rows: [{ k: 'Rôle', v: 'ARNm → protéines' }, { k: 'Taille', v: '≈ 25 nm' }, { k: 'Position', v: 'libres ou sur le RE' }] },
+      amidon: { name: "Grain d'amidon", sub: 'réserve de glucides', dot: '#f2efe4', rows: [{ k: 'Composition', v: 'amylose, amylopectine' }, { k: 'Formation', v: 'dans le stroma' }, { k: 'Rôle', v: "réserve d'énergie" }] },
+      plasmodesme: { name: 'Plasmodesme', sub: 'pont entre cellules', dot: '#7fe0d0', rows: [{ k: 'Rôle', v: 'échanges cytoplasmiques' }, { k: 'Structure', v: 'canal traversant la paroi' }, { k: 'Passage', v: 'ions, ARN, virus' }] },
+      peroxysome: { name: 'Peroxysome', sub: 'détoxification', dot: '#63c3c8', rows: [{ k: 'Enzyme', v: 'catalase' }, { k: 'Rôle', v: 'photorespiration' }, { k: 'Action', v: 'dégrade H₂O₂' }] },
+      enveloppe: { name: 'Enveloppe plastidiale', sub: 'double membrane', dot: '#8fc46b', rows: [{ k: 'Membranes', v: 'externe et interne' }, { k: 'Transport', v: 'translocons TOC / TIC' }, { k: 'Rôle', v: 'délimite le stroma' }] },
+      stroma: { name: 'Stroma', sub: 'matrice du plastide', dot: '#3f8f55', rows: [{ k: 'Contenu', v: 'enzymes du cycle de Calvin' }, { k: 'Rôle', v: 'fixation du CO₂' }, { k: 'Aussi', v: 'ADN et ribosomes' }] },
+      granum: { name: 'Granum', sub: 'pile de thylakoïdes', dot: '#2f8b4f', rows: [{ k: 'Structure', v: '10 à 100 disques' }, { k: 'Rôle', v: 'phase claire' }, { k: 'Pigments', v: 'chlorophylles, caroténoïdes' }] },
+      thylakoide: { name: 'Thylakoïde du stroma', sub: 'lamelle de liaison', dot: '#57b877', rows: [{ k: 'Rôle', v: 'relie les grana' }, { k: 'Membrane', v: 'porte les photosystèmes' }, { k: 'Lumen', v: 'gradient de protons' }] },
+      amidon2: { name: "Grain d'amidon", sub: 'produit de la photosynthèse', dot: '#f2efe4', rows: [{ k: 'Origine', v: 'excédent de glucose' }, { k: 'Cycle', v: 'formé le jour, usé la nuit' }, { k: 'Taille', v: '1 – 5 µm' }] },
+      nucleoide: { name: 'ADN plastidial', sub: 'génome circulaire', dot: '#a78bfa', rows: [{ k: 'Forme', v: 'circulaire, en nucléoïdes' }, { k: 'Gènes', v: '≈ 120' }, { k: 'Hérédité', v: 'maternelle' }] },
+      plastoglobule: { name: 'Plastoglobule', sub: 'gouttelette lipidique', dot: '#e8c667', rows: [{ k: 'Contenu', v: 'lipides, quinones' }, { k: 'Rôle', v: 'stock de tocophérol' }, { k: 'Attache', v: 'membrane thylakoïdale' }] },
+      bicouche: { name: 'Membrane thylakoïdale', sub: 'bicouche lipidique', dot: '#69b98a', rows: [{ k: 'Épaisseur', v: '≈ 5 nm' }, { k: 'Lipides', v: 'galactolipides' }, { k: 'Rôle', v: 'support des complexes' }] },
+      psii: { name: 'Photosystème II', sub: "oxydation de l'eau", dot: '#1f6b4a', rows: [{ k: 'Absorption', v: '680 nm' }, { k: 'Réaction', v: '2 H₂O → O₂ + 4 H⁺' }, { k: 'Sortie', v: 'électrons vers la PQ' }] },
+      cytb6f: { name: 'Cytochrome b6f', sub: 'pompe à protons', dot: '#2f7d8c', rows: [{ k: 'Rôle', v: "transfert d'électrons" }, { k: 'Effet', v: 'H⁺ vers le lumen' }, { k: 'Partenaire', v: 'plastocyanine' }] },
+      psi: { name: 'Photosystème I', sub: 'réduction du NADP⁺', dot: '#37945a', rows: [{ k: 'Absorption', v: '700 nm' }, { k: 'Produit', v: 'NADPH' }, { k: 'Donneur', v: 'plastocyanine' }] },
+      atpsynthase: { name: 'ATP synthase', sub: 'turbine moléculaire', dot: '#e0a24a', rows: [{ k: 'Moteur', v: 'gradient de H⁺' }, { k: 'Produit', v: 'ATP dans le stroma' }, { k: 'Débit', v: '≈ 100 ATP / s' }] },
+      lumen: { name: 'Lumen', sub: 'espace intra-thylakoïdal', dot: '#2b6b7a', rows: [{ k: 'pH', v: '≈ 5 en pleine lumière' }, { k: 'Rôle', v: 'réservoir de protons' }, { k: 'Contenu', v: 'plastocyanine' }] },
+      plastoquinone: { name: 'Plastoquinone', sub: 'navette mobile', dot: '#e0803a', rows: [{ k: 'Rôle', v: 'porte 2 e⁻ et 2 H⁺' }, { k: 'Mobilité', v: 'diffuse dans la bicouche' }, { k: 'Cible', v: 'cytochrome b6f' }] }
+    };
+    /* --- Plongee « powers of ten » -------------------------------------------
+       Meme mecanique que la cellule animale (engine.js) et que la musculaire :
+       une profondeur CONTINUE en log10, et les strates mises a l'echelle en
+       fonction d'elle. V = taille de champ de chaque strate, en micrometres.    */
+    this.V = this.LEV.map(L => (L.unit === 'nm' ? L.field / 1000 : L.field));   // [70, 12, 0.09]
+    this.fieldTop = this.V[0];
+    this.Pmax = Math.log10(this.V[0] / this.V[this.V.length - 1]);
+    this.depth = 0; this.depthTarget = 0; this.curField = this.V[0];
+
+    this.parts = {};
+    this.pick = [[], [], []];
+    this.groups = [];
+    this.capRec = {};
+    this.shellDefs = {};
+    this.hover = null;
+    this.seed = 20260729;
+  }
+
+  rnd() { this.seed = (this.seed * 1103515245 + 12345) & 0x7fffffff; return this.seed / 0x7fffffff; }
+  rr(a, b) { return a + (b - a) * this.rnd(); }
+
+  sync() {
+    const o = this.S.owner;
+    if (o && o.applyStage) o.applyStage(false);
+    window.dispatchEvent(new Event('cell:state'));
+  }
+  componentDidMount() {
+    this.mounted = true;
+    this._onS = () => { if (this.mounted) this.forceUpdate(); };
+    window.addEventListener('cell:state', this._onS);
+    this.waitLib();
+  }
+  componentWillUnmount() {
+    this.mounted = false;
+    window.removeEventListener('cell:state', this._onS);
+    if (this._t) clearTimeout(this._t);
+    if (window.__cellStage.owner === this) {
+      setTimeout(() => {
+        if (document.querySelector('[data-cell-host]')) return;
+        if (this._raf) cancelAnimationFrame(this._raf);
+        if (this.renderer) {
+          this.renderer.dispose();
+          const el = this.renderer.domElement;
+          if (el.parentNode) el.parentNode.removeChild(el);
+        }
+        if (window.__cellStage.owner === this) window.__cellStage.owner = null;
+      }, 1600);
+    }
+  }
+  waitLib() {
+    if (!this.mounted) return;
+    if (window.THREE && this.hostRef.current) this.init();
+    else this._t = setTimeout(() => this.waitLib(), 70);
+  }
+
+  /* ---------- geometry helpers ---------- */
+  sq(rx, ry, rz, n, seg) {
+    const T = this.T, g = new T.SphereGeometry(1, seg, Math.max(10, Math.round(seg / 2)));
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const l = Math.hypot(x, y, z) || 1; x /= l; y /= l; z /= l;
+      const d = Math.pow(Math.pow(Math.abs(x), n) + Math.pow(Math.abs(y), n) + Math.pow(Math.abs(z), n), -1 / n);
+      p.setXYZ(i, x * d * rx, y * d * ry, z * d * rz);
+    }
+    g.computeVertexNormals();
+    return g;
+  }
+  squirclePt(t, rx, ry, n) {
+    const c = Math.cos(t), s = Math.sin(t);
+    const r = Math.pow(Math.pow(Math.abs(c), n) + Math.pow(Math.abs(s), n), -1 / n);
+    return [rx * r * c, ry * r * s];
+  }
+  capGeom(O, I, zc, seg) {
+    const T = this.T; seg = seg || 180;
+    const k1 = 1 - Math.pow(Math.min(1, Math.abs(zc) / O.rz), O.n);
+    if (k1 <= 0.0008) return new T.BufferGeometry();
+    const k2 = 1 - Math.pow(Math.min(1, Math.abs(zc) / I.rz), I.n);
+    const s1 = Math.pow(k1, 1 / O.n), s2 = k2 > 0 ? Math.pow(k2, 1 / I.n) : 0;
+    const pos = [], idx = [];
+    for (let a = 0; a <= seg; a++) {
+      const t = a / seg * Math.PI * 2;
+      const o = this.squirclePt(t, O.rx * s1, O.ry * s1, O.n);
+      const i2 = k2 > 0 ? this.squirclePt(t, I.rx * s2, I.ry * s2, I.n) : [0, 0];
+      pos.push(o[0], o[1], zc, i2[0], i2[1], zc);
+    }
+    for (let a = 0; a < seg; a++) { const b = a * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  mat(c, o) {
+    const m = new this.T.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.55, metalness: 0 }, o || {}));
+    return m;
+  }
+  clipMat(c, o) { return this.mat(c, Object.assign({ clippingPlanes: [this.plane] }, o || {})); }
+  // Le noyau est un corps a part : il suit son propre plan, desactive par defaut, pour
+  // rester entier quand on ouvre la cellule. Meme principe que le nucClip de la cellule
+  // animale, ou le noyau ne se coupe qu'a la demande.
+  nucMat(c, o) { return this.mat(c, Object.assign({ clippingPlanes: [this.nucPlane] }, o || {})); }
+
+  reg(level, id, obj, opts) {
+    opts = opts || {};
+    const mats = [];
+    obj.traverse(o => {
+      if (o.isMesh) {
+        o.userData.oid = id;
+        this.pick[level].push(o);
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        ms.forEach(m => { if (m && mats.indexOf(m) < 0) { m.userData.e0 = m.emissive ? m.emissive.getHex() : 0; mats.push(m); } });
+      }
+    });
+    const base = obj.position.clone();
+    let kids = null;
+    if (opts.kids) {
+      kids = obj.children.map(c => ({
+        o: c, b: c.position.clone(),
+        d: c.position.length() > 0.01 ? c.position.clone().normalize() : new this.T.Vector3(0, 1, 0)
+      }));
+    }
+    this.parts[id] = {
+      obj, base, mats, level, kids,
+      dir: opts.fixed ? new this.T.Vector3() : base.clone().normalize().multiplyScalar(base.length() > 0.01 ? 1 : 0),
+      anchor: opts.anchor || null
+    };
+    return obj;
+  }
+
+  /* ---------- organic helpers ---------- */
+  /* --- Repris de engine.js -------------------------------------------------
+     Deplacement de sommets de la cellule animale : trois harmoniques sur la normale.
+     C'est lui qui donne aux membranes leur irregularite organique plutot qu'une
+     sphere parfaite. Formule identique, pour que les organites partages se
+     ressemblent reellement et pas seulement de loin.                            */
+  // Clamp doux repris de engine.js : l'echelle sature au lieu d'exploser.
+  soft(x, m = 6, n = 6) { return x / Math.pow(1 + Math.pow(x / m, n), 1 / n); }
+  smooth(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+  setGroupAlpha(g, a) {
+    const plein = a >= 0.999;
+    g.traverse(o => {
+      if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of ms) {
+        if (!m) continue;
+        if (m.userData.baseOpacity == null) {
+          m.userData.baseOpacity = (m.opacity == null ? 1 : m.opacity);
+          m.userData.baseTransparent = !!m.transparent;
+          m.userData.baseDepthWrite = ('depthWrite' in m) ? m.depthWrite : true;
+        }
+        // Hors fondu on REND au materiau son etat d'origine. Forcer `transparent` en
+        // permanence faisait passer toute la scene dans la passe transparente, triee par
+        // distance : des organites disparaissaient puis revenaient selon l'angle de vue.
+        if (plein) {
+          m.opacity = m.userData.baseOpacity;
+          m.transparent = m.userData.baseTransparent;
+          if ('depthWrite' in m) m.depthWrite = m.userData.baseDepthWrite;
+        } else {
+          m.opacity = a * m.userData.baseOpacity;
+          m.transparent = true;
+          if ('depthWrite' in m && !o.isPoints && !o.isLine && !o.isSprite) m.depthWrite = a > 0.85;
+        }
+      }
+    });
+  }
+  measureMaxDim(g) {
+    const T = this.T;
+    g.updateMatrixWorld(true);
+    const box = new T.Box3(); let found = false;
+    g.traverse(o => { if ((o.isMesh || o.isInstancedMesh) && o.geometry) { box.expandByObject(o); found = true; } });
+    if (!found || box.isEmpty()) box.setFromObject(g);
+    const v = new T.Vector3(); box.getSize(v);
+    return Math.max(v.x, v.y, v.z) || 1;
+  }
+
+  nucDisplace(geo, amp, freq, phase) {
+    const T = this.T, pos = geo.attributes.position;
+    const a = new T.Vector3(), o = new T.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      a.fromBufferAttribute(pos, i); o.copy(a).normalize();
+      let s = Math.sin(o.x * freq + phase) * Math.cos(o.y * freq * 1.3 + phase);
+      s += 0.5 * Math.sin(o.y * freq * 2.1 + phase * 2) * Math.cos(o.z * freq * 1.7 + phase);
+      s += 0.25 * Math.sin(o.z * freq * 3.3 + phase * 3);
+      const len = a.length() * (1 + amp * s);
+      a.copy(o).multiplyScalar(len);
+      pos.setXYZ(i, a.x, a.y, a.z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+  /* Citerne : calotte spherique refermee par un bourrelet arrondi, en LatheGeometry.
+     Port du helper `kt` de engine.js — c'est la brique des saccules du Golgi et des
+     cisternes du reticulum dans la cellule animale.                              */
+  cisterna(r, cap, thick, seg) {
+    const T = this.T, pts = [];
+    for (let i = 0; i <= 22; i++) { const a = (i / 22) * cap; pts.push(new T.Vector2(r * Math.sin(a), r * Math.cos(a))); }
+    const o = new T.Vector2(r * Math.sin(cap), r * Math.cos(cap));
+    const in2 = new T.Vector2((r - thick) * Math.sin(cap), (r - thick) * Math.cos(cap));
+    const c = o.clone().add(in2).multiplyScalar(0.5);
+    const l = o.clone().sub(in2).multiplyScalar(0.5);
+    const d = new T.Vector2(Math.sin(cap), Math.cos(cap));
+    for (let i = 1; i < 8; i++) {
+      const a = (i / 8) * Math.PI;
+      pts.push(c.clone().addScaledVector(l, Math.cos(a)).addScaledVector(d, thick * 0.5 * Math.sin(a)));
+    }
+    for (let i = 0; i <= 22; i++) { const a = cap * (1 - i / 22); pts.push(new T.Vector2((r - thick) * Math.sin(a), (r - thick) * Math.cos(a))); }
+    const geo = new T.LatheGeometry(pts, seg, 0, Math.PI * 2);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  /* Reticulum endoplasmique rugueux, porte de buildERStack (engine.js).
+     Empilement de citernes concentriques orientees le long de `dir`, reliees entre
+     elles par des tubes qui joignent leurs bords, puis constellees de ribosomes
+     plaques sur la face externe et orientes selon la normale — c'est ce qui fait
+     le « rugueux ». Le nombre de ribosomes suit la meme loi que l'animale :
+     130 x cap x racine(r), donc les grandes citernes en portent davantage.       */
+  buildERStack(dir, o) {
+    const T = this.T, grp = new T.Group();
+    grp.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir.clone().normalize());
+    const cistM = this.clipMat(0xbf6c97, { side: T.DoubleSide, roughness: 0.5, transparent: true,
+      opacity: 0.9, emissive: 0x6e2a4d, emissiveIntensity: 0.32 });
+    const riboM = this.clipMat(0xc65a97, { roughness: 0.28, metalness: 0.05, transparent: true,
+      opacity: 0.95, emissive: 0x3a0f28, emissiveIntensity: 0.24 });
+    const spherePt = (pol, az) => new T.Vector3(Math.sin(pol) * Math.cos(az), Math.cos(pol), Math.sin(pol) * Math.sin(az));
+
+    const cist = [], edge = [];
+    for (let i = 0; i < o.NC; i++) {
+      const r = o.r0 + i * o.dr, cap = o.cap0 - i * o.dcap;
+      const geo = this.nucDisplace(this.cisterna(r, cap, 0.11, 56), 0.006, 5.2, o.seed + i * 1.7);
+      grp.add(new T.Mesh(geo, cistM));
+      cist.push({ r, cap });
+      edge.push(spherePt(cap * 0.82, i * 1.4).multiplyScalar(r - 0.04));
+    }
+    // tubes de liaison : chaque citerne est reliee a la suivante par son bord
+    for (let i = 0; i < edge.length - 1; i++) {
+      const mid = edge[i].clone().lerp(edge[i + 1], 0.5).multiplyScalar(1.01);
+      const curve = new T.CatmullRomCurve3([edge[i], mid, edge[i + 1]]);
+      grp.add(new T.Mesh(new T.TubeGeometry(curve, 14, 0.05, 6, false), cistM));
+    }
+    // ribosomes plaques, instancies et orientes selon la normale locale
+    const studs = [];
+    cist.forEach(({ r, cap }) => {
+      const n = Math.floor(130 * cap * Math.sqrt(r) * (o.riboScale || 1));
+      for (let k = 0; k < n; k++) {
+        const nrm = spherePt(this.rnd() * cap * 0.99, this.rnd() * Math.PI * 2);
+        studs.push({ p: nrm.clone().multiplyScalar(r + 0.008), nrm, s: 0.8 + this.rnd() * 0.3 });
+      }
+    });
+    const inst = new T.InstancedMesh(new T.SphereGeometry(0.021, 8, 6), riboM, studs.length);
+    inst.frustumCulled = false;
+    const dummy = new T.Object3D(), up = new T.Vector3(0, 1, 0);
+    studs.forEach((st, i) => {
+      dummy.position.copy(st.p);
+      dummy.quaternion.setFromUnitVectors(up, st.nrm.clone().normalize());
+      dummy.scale.setScalar(st.s);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    grp.add(inst);
+    return grp;
+  }
+
+  // Repartition reguliere sur une sphere (spirale de Fibonacci), comme les pores
+  // nucleaires de la cellule animale.
+  fibSphere(n, r) {
+    const T = this.T, out = [], ga = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < n; i++) {
+      const y = 1 - (i / (n - 1)) * 2, rad = Math.sqrt(Math.max(0, 1 - y * y)), th = i * ga;
+      out.push(new T.Vector3(Math.cos(th) * rad * r, y * r, Math.sin(th) * rad * r));
+    }
+    return out;
+  }
+
+  nz(x, y, z) {
+    return Math.sin(x * 1.7 + 0.9) * Math.sin(y * 2.1 + 2.3) * Math.sin(z * 1.9 + 4.1)
+      + 0.55 * Math.sin(x * 3.7 + 1.7) * Math.sin(y * 4.3 + 0.4) * Math.sin(z * 3.1 + 2.9);
+  }
+  warp(g, amp, freq) {
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const k = 1 + amp * this.nz(x * freq, y * freq, z * freq);
+      p.setXYZ(i, x * k, y * k, z * k);
+    }
+    p.needsUpdate = true; g.computeVertexNormals();
+    return g;
+  }
+  blob(r, seg, amp, sy) {
+    const g = this.warp(new this.T.SphereGeometry(r, seg, Math.max(8, Math.round(seg * 0.62))), amp === undefined ? 0.09 : amp, 3.2 / r);
+    if (sy) g.scale(1, sy, 1);
+    return g;
+  }
+  tubeG(pts, rad, tSeg, rSeg, closed) {
+    const T = this.T;
+    const c = new T.CatmullRomCurve3(pts.map(p => new T.Vector3(p[0], p[1], p[2])), !!closed, 'catmullrom', 0.5);
+    return new T.TubeGeometry(c, tSeg || 44, rad, rSeg || 6, !!closed);
+  }
+  sqSurf(S, dx, dy, dz, f) {
+    const l = Math.hypot(dx, dy, dz) || 1; dx /= l; dy /= l; dz /= l;
+    const d = Math.pow(Math.pow(Math.abs(dx), S.n) + Math.pow(Math.abs(dy), S.n) + Math.pow(Math.abs(dz), S.n), -1 / S.n);
+    return [dx * d * S.rx * f, dy * d * S.ry * f, dz * d * S.rz * f];
+  }
+  wiggle(from, to, n, amp) {
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      pts.push([
+        from[0] + (to[0] - from[0]) * t + Math.sin(t * 6.1 + from[0] * 3) * amp * Math.sin(t * Math.PI),
+        from[1] + (to[1] - from[1]) * t + Math.sin(t * 4.7 + from[1] * 4) * amp * Math.sin(t * Math.PI),
+        from[2] + (to[2] - from[2]) * t + Math.sin(t * 5.3 + from[2] * 5) * amp * Math.sin(t * Math.PI)
+      ]);
+    }
+    return pts;
+  }
+
+  /* ---------- level 1 : plant cell ---------- */
+  buildLevel1() {
+    const T = this.T, g = new T.Group();
+    const O = { rx: 1.98, ry: 1.46, rz: 1.52, n: 5 }, I = { rx: 1.86, ry: 1.35, rz: 1.41, n: 5 };
+    this.shellDefs[0] = { O, I };
+
+    /* paroi : lamelle + réseau de microfibrilles de cellulose */
+    const wall = new T.Mesh(this.warp(this.sq(O.rx, O.ry, O.rz, O.n, 132), 0.0075, 2.4), this.clipMat(0xa8c15e, { side: T.DoubleSide, roughness: 0.94 }));
+    const wallIn = new T.Mesh(this.warp(this.sq(O.rx * 0.972, O.ry * 0.972, O.rz * 0.972, O.n, 108), 0.006, 2.4), this.clipMat(0x3d5a34, { side: T.DoubleSide, roughness: 0.95 }));
+    const fib = new T.Group();
+    const fibM = this.clipMat(0x71904c, { roughness: 0.92 });
+    for (let k = 0; k < 26; k++) {
+      const lat = this.rr(-0.94, 0.94), wind = this.rr(2.1, 4.3), ph0 = this.rr(0, 6.28);
+      const steep = k % 5 === 0;
+      const span = steep ? this.rr(1.2, 1.7) * (this.rnd() > 0.5 ? 1 : -1) : this.rr(-0.14, 0.14);
+      const rf = 0.9555 + this.rr(-0.004, 0.006);
+      const pts = [];
+      for (let i = 0; i <= 54; i++) {
+        const t = i / 54, ang = ph0 + t * wind * Math.PI * 2;
+        let cy = lat + span * (t - 0.5) + Math.sin(ang * 0.7) * 0.045;
+        cy = Math.max(-0.97, Math.min(0.97, cy));
+        const r = Math.sqrt(1 - cy * cy);
+        pts.push(this.sqSurf(O, r * Math.cos(ang), cy, r * Math.sin(ang), rf));
+      }
+      fib.add(new T.Mesh(this.tubeG(pts, this.rr(0.0045, 0.0075), 110, 4), fibM));
+    }
+
+    /* membrane plasmique : bicouche + protéines transmembranaires */
+    const memb = new T.Mesh(this.warp(this.sq(I.rx, I.ry, I.rz, I.n, 132), 0.0065, 2.7), this.clipMat(0x2f9a78, { side: T.DoubleSide, roughness: 0.7, transparent: true, opacity: 0.93 }));
+    const membG = new T.Group();
+    membG.add(memb);
+    const prM = this.clipMat(0x63dcbb, { roughness: 0.38 }), pmM = this.clipMat(0xe8c25e, { roughness: 0.32 });
+    for (let i = 0; i < 54; i++) {
+      const th = this.rr(0, 6.28), cy = this.rr(-0.96, 0.96), r = Math.sqrt(1 - cy * cy);
+      const p = this.sqSurf(I, r * Math.cos(th), cy, r * Math.sin(th), 1.001);
+      const big = i % 6 === 0;
+      const m = new T.Mesh(big ? new T.CylinderGeometry(0.048, 0.062, 0.11, 10) : new T.CylinderGeometry(0.026, 0.033, 0.078, 8), big ? pmM : prM);
+      m.position.set(p[0], p[1], p[2]);
+      m.lookAt(0, 0, 0); m.rotateX(Math.PI / 2);
+      membG.add(m);
+    }
+    const cyto = new T.Mesh(this.sq(I.rx * 0.978, I.ry * 0.978, I.rz * 0.978, I.n, 72), this.clipMat(0x0b322f, { side: T.BackSide, roughness: 1, transparent: true, opacity: 0.9 }));
+    cyto.renderOrder = -10; memb.renderOrder = -9;
+    const Oc = { rx: O.rx * 1.014, ry: O.ry * 1.014, rz: O.rz, n: O.n }, Ic = { rx: I.rx * 0.985, ry: I.ry * 0.985, rz: I.rz, n: I.n };
+    const cap = new T.Mesh(this.capGeom(Oc, Ic, this.cutZ(0)), this.mat(0xd3e295, { side: T.DoubleSide, roughness: 0.78 }));
+    this.capRec[0] = { mesh: cap, O: Oc, I: Ic };
+    g.add(wall, wallIn, cyto, cap);
+    this.reg(0, 'paroi', wall, { fixed: true, anchor: new T.Vector3(-1.2, 1.15, 0.4) });
+    g.add(this.reg(0, 'microfibrille', fib, { fixed: true, anchor: new T.Vector3(0.6, 1.3, 0.5) }));
+    g.add(this.reg(0, 'membrane', membG, { fixed: true, anchor: new T.Vector3(1.35, 1.0, 0.35) }));
+
+    /* vacuole : tonoplaste plissé + inclusions */
+    const vac = new T.Group();
+    const vacOut = new T.Mesh(this.warp(this.sq(1.2, 0.93, 0.94, 2.6, 96), 0.03, 2.6), this.clipMat(0xa9d6f7, { side: T.DoubleSide, transparent: true, opacity: 0.58, roughness: 0.5, metalness: 0.05 }));
+    const vacIn = new T.Mesh(this.warp(this.sq(1.16, 0.895, 0.905, 2.6, 80), 0.03, 2.6), this.clipMat(0x3a7cbd, { side: T.BackSide, transparent: true, opacity: 0.7, roughness: 1 }));
+    // L'enveloppe de la vacuole est un gros volume translucide qui contient d'autres
+    // organites : elle doit etre dessinee AVANT eux et ne pas ecrire dans le tampon de
+    // profondeur, sinon l'ordre de tri change avec l'angle et tout scintille derriere.
+    vacOut.renderOrder = -5; vacIn.renderOrder = -6;
+    vacOut.material.depthWrite = false; vacIn.material.depthWrite = false;
+    vac.add(vacOut, vacIn);
+    const tonM = this.clipMat(0x8ec9ec, { roughness: 0.55, transparent: true, opacity: 0.4 });
+    for (let i = 0; i < 8; i++) {
+      const lat = -0.82 + i * 0.235 + this.rr(-0.06, 0.06), pts = [];
+      for (let j = 0; j <= 40; j++) {
+        const t = j / 40, ang = t * Math.PI * 2;
+        let cy = lat + Math.sin(ang * 2 + i) * 0.07;
+        cy = Math.max(-0.94, Math.min(0.94, cy));
+        const r = Math.sqrt(1 - cy * cy);
+        pts.push(this.sqSurf({ rx: 1.2, ry: 0.93, rz: 0.94, n: 2.6 }, r * Math.cos(ang), cy, r * Math.sin(ang), 1.002));
+      }
+      vac.add(new T.Mesh(this.tubeG(pts, 0.0075, 90, 4, true), tonM));
+    }
+    const crM = this.clipMat(0xdff0ff, { roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.85 });
+    [[0.42, -0.3, 0.2], [-0.5, 0.25, -0.15], [0.05, 0.42, 0.3]].forEach(p => {
+      const c = new T.Mesh(new T.OctahedronGeometry(0.09, 0), crM);
+      c.scale.set(0.35, 1, 0.35);
+      c.position.set(p[0], p[1], p[2]);
+      c.rotation.set(this.rr(-1, 1), this.rr(-1, 1), this.rr(-1, 1));
+      vac.add(c);
+    });
+    vac.position.set(0.07, 0.05, -0.22);
+    g.add(this.reg(0, 'vacuole', vac));
+
+    /* --- Noyau : replique de celui de la cellule animale ----------------------
+       Meme construction (icosaedre deplace, double feuillet, 64 pores instancies,
+       nucleole deplace, 7 brins de chromatine en Catmull-Rom) et meme palette.
+       Seuls le rayon et la position restent ceux de la cellule vegetale.
+       Il suit nucMat() : c'est un corps a part, coupe independamment.            */
+    const nuc = new T.Group();
+    const NR = 0.47;
+
+    const envOut = new T.Mesh(this.nucDisplace(new T.IcosahedronGeometry(NR, 20), 0.026, 4, 6.3),
+      this.nucMat(0x5f83cf, { side: T.DoubleSide, transparent: true, opacity: 0.5, roughness: 0.35,
+        emissive: 0x1a2440, emissiveIntensity: 0.45 }));   // couleur de base assombrie, pas l'accent de bord
+    envOut.renderOrder = 18; nuc.add(envOut);
+
+    const envIn = new T.Mesh(this.nucDisplace(new T.IcosahedronGeometry(NR * 0.9, 18), 0.028, 4.4, 11.1),
+      this.nucMat(0x5f83cf, { side: T.DoubleSide, transparent: true, opacity: 0.72, roughness: 0.4,
+        emissive: 0x1d1f47, emissiveIntensity: 0.4 }));
+    envIn.renderOrder = 17; nuc.add(envIn);
+
+    // Pores : instancies et orientes vers le centre, comme dans l'animale.
+    {
+      const poreM = this.nucMat(0x3f57ab, { roughness: 0.4, metalness: 0.15, transparent: true, opacity: 0.96,
+        emissive: 0x22326f, emissiveIntensity: 0.5 });
+      const inst = new T.InstancedMesh(new T.TorusGeometry(0.047, 0.017, 8, 16), poreM, 64);
+      inst.frustumCulled = false;
+      const dummy = new T.Object3D();
+      this.fibSphere(64, NR * 0.99).forEach((v, i) => {
+        dummy.position.copy(v); dummy.lookAt(0, 0, 0); dummy.updateMatrix();
+        inst.setMatrixAt(i, dummy.matrix);
+      });
+      inst.instanceMatrix.needsUpdate = true;
+      nuc.add(inst);
+    }
+
+    // Chromatine : 7 brins, chacun une courbe lissee passant par 4 a 6 points.
+    {
+      const chrM = this.nucMat(0x8fb0ff, { roughness: 0.55, transparent: true, opacity: 0.6,
+        emissive: 0x33407a, emissiveIntensity: 0.16 });
+      for (let i = 0; i < 7; i++) {
+        const n = 4 + Math.floor(this.rnd() * 3), pts = [];
+        for (let j = 0; j < n; j++) {
+          const u = this.rr(-1, 1), th = this.rr(0, 6.283), rad = Math.sqrt(Math.max(0, 1 - u * u));
+          const rr2 = NR * 0.82 * Math.cbrt(this.rnd());
+          pts.push(new T.Vector3(Math.cos(th) * rad * rr2, u * rr2, Math.sin(th) * rad * rr2));
+        }
+        const curve = new T.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+        nuc.add(new T.Mesh(new T.TubeGeometry(curve, 120, 0.011, 5, false), chrM));
+      }
+    }
+
+    const nlo = new T.Mesh(this.nucDisplace(new T.IcosahedronGeometry(0.155, 4), 0.13, 5, 7.7),
+      this.nucMat(0xe8b24a, { roughness: 0.5, emissive: 0xc47a10, emissiveIntensity: 0.5 }));
+    nlo.position.set(0.08, -0.06, 0.04); nuc.add(nlo);
+
+    nuc.position.set(-1.02, 0.36, 0.18);
+    g.add(this.reg(0, 'noyau', nuc));
+
+    /* chloroplastes */
+    const chPos = [[0.98, 0.5, 0.42], [1.3, -0.36, 0.02], [-0.22, -0.92, 0.4], [0.34, 0.92, -0.1], [-1.08, -0.58, 0.12], [0.72, -0.14, 0.62], [-0.62, 0.72, -0.32]];
+    const chG = new T.Group();
+    chPos.forEach(p => {
+      const c = this.miniChloroplast();
+      c.scale.set(this.rr(1.15, 1.5), this.rr(1.05, 1.4), this.rr(1.15, 1.5));
+      c.position.set(p[0], p[1], p[2]);
+      c.rotation.set(this.rr(-0.8, 0.8), this.rr(0, Math.PI), this.rr(-0.7, 0.7));
+      chG.add(c);
+    });
+    g.add(this.reg(0, 'chloroplaste', chG, { fixed: true, kids: true, anchor: new T.Vector3(1.0, 0.55, 0.45) }));
+
+    /* --- Mitochondries : replique de celles de la cellule animale -------------
+       Icosaedre deplace puis etire en (L, R, R), et deux cretes en zigzag tracees
+       comme des tubes le long de l'axe. Meme palette bleue que l'animale : c'est
+       le meme organite, il n'y a pas de raison qu'il soit rose ici et bleu la-bas. */
+    const mitoG = new T.Group();
+    [[0.16, 0.95, 0.34], [-0.8, -0.94, 0.24], [1.44, 0.2, -0.3], [-1.3, 0.1, 0.52]].forEach((p, idx) => {
+      const m = new T.Group();
+      const L0 = this.rr(0.26, 0.34), R0 = this.rr(0.12, 0.145);
+
+      const geo = this.nucDisplace(new T.IcosahedronGeometry(1, 4), 0.05, 6, idx * 3.7);
+      geo.scale(L0, R0, R0);
+      m.add(new T.Mesh(geo, this.clipMat(0x4f86bf, { transparent: true, opacity: 0.62, roughness: 0.55,
+        side: T.DoubleSide, emissive: 0x162535, emissiveIntensity: 0.45 })));
+
+      const cr = this.clipMat(0x9fc2ec, { roughness: 0.35, side: T.DoubleSide, transparent: true,
+        opacity: 0.96, emissive: 0x26507e, emissiveIntensity: 0.55 });
+      for (let k = 0; k < 2; k++) {
+        const pts = [], z = (k === 0 ? 0.42 : -0.42) * R0;
+        for (let j = 0; j <= 8; j++) {
+          const x = (-0.72 + (j / 8) * 1.44) * L0;
+          const y = (j % 2 ? 0.6 : -0.6) * R0 * 0.72;
+          pts.push(new T.Vector3(x, y, z + (this.rnd() - 0.5) * 0.03));
+        }
+        const curve = new T.CatmullRomCurve3(pts, false, 'catmullrom', 0.4);
+        m.add(new T.Mesh(new T.TubeGeometry(curve, 80, (0.045 * R0) / 0.28, 6, false), cr));
+      }
+
+      m.rotation.set(this.rr(-1, 1), this.rr(-1, 1), this.rr(0.3, 1.4));
+      m.position.set(p[0], p[1], p[2]);
+      mitoG.add(m);
+    });
+    g.add(this.reg(0, 'mitochondrie', mitoG, { fixed: true, kids: true, anchor: new T.Vector3(0.16, 0.95, 0.34) }));
+
+    /* Golgi : dictyosome courbé + vésicules bourgeonnantes */
+    /* --- Appareil de Golgi : replique de celui de la cellule animale ----------
+       Dictyosome de 6 saccules empiles, construits avec la meme citerne en lathe.
+       Les deux derniers passent au ton clair : c'est la face trans, celle qui
+       bourgeonne. Palette bleue de l'animale, position propre a la vegetale.     */
+    const gol = new T.Group();
+    const golM = this.clipMat(0x6273c9, { side: T.DoubleSide, transparent: true, opacity: 0.96,
+      roughness: 0.5, emissive: 0x2a3576, emissiveIntensity: 0.2 });
+    const golTrans = this.clipMat(0xc3ccff, { side: T.DoubleSide, transparent: true, opacity: 0.96,
+      roughness: 0.45, emissive: 0x3a4890, emissiveIntensity: 0.3 });
+    for (let i = 0; i < 6; i++) {
+      const geo = this.nucDisplace(this.cisterna(1.5 - i * 0.05, 0.42, 0.05, 44), 0.006, 6, i * 2.1);
+      const m = new T.Mesh(geo, i >= 4 ? golTrans : golM);
+      m.scale.setScalar(0.5);
+      m.position.y = i * 0.085 - 0.21;
+      gol.add(m);
+    }
+    // vesicules de secretion qui bourgeonnent de la face trans
+    {
+      const vesGeo = new T.IcosahedronGeometry(1, 2);
+      const vesM = this.clipMat(0x8d9ee6, { roughness: 0.5, transparent: true, opacity: 0.9,
+        emissive: 0x2a3576, emissiveIntensity: 0.16 });
+      for (let i = 0; i < 10; i++) {
+        const v = new T.Mesh(vesGeo, vesM);
+        const ang = this.rr(0, 6.28), rr2 = 0.16 + this.rnd() * 0.11;
+        v.position.set(Math.cos(ang) * rr2, (i / 10) * 0.4 - 0.2, Math.sin(ang) * rr2);
+        v.scale.setScalar(this.rr(0.022, 0.042));
+        gol.add(v);
+      }
+    }
+    gol.rotation.set(0.42, 0.3, 0.22);
+    gol.position.set(0.5, -0.88, 0.2);
+    g.add(this.reg(0, 'golgi', gol));
+
+    /* --- Reticulum endoplasmique : replique de celui de la cellule animale -----
+       Memes parametres d'empilement (5 citernes, meme progression de rayon et
+       d'ouverture), puis mise a l'echelle pour venir envelopper le noyau de la
+       vegetale, plus petit que celui de l'animale.                              */
+    const er = this.buildERStack(new T.Vector3(0.85, -0.45, 0.5), {
+      NC: 5, r0: 1.72, dr: 0.15, cap0: 0.9, dcap: 0.05, riboScale: 1, seed: 4
+    });
+    er.scale.setScalar(0.32);
+    er.position.set(-1.02, 0.36, 0.18);   // centre sur le noyau, qu'il enveloppe
+    g.add(this.reg(0, 're', er));
+
+    /* ribosomes libres : dimères grande + petite sous-unité */
+    const rib = new T.Group();
+    const rbL = this.clipMat(0x8f6fd0, { roughness: 0.52 }), rbS = this.clipMat(0xb9a3ef, { roughness: 0.5 });
+    for (let i = 0; i < 46; i++) {
+      const d = new T.Group();
+      const big = new T.Mesh(this.blob(0.022, 10, 0.16), rbL);
+      const small = new T.Mesh(this.blob(0.014, 8, 0.18), rbS);
+      small.position.set(0.02, 0.024, 0.004);
+      d.add(big, small);
+      const th = this.rr(0, Math.PI * 2), ph = Math.acos(this.rr(-1, 1)), fq = this.rr(0.7, 0.94);
+      d.position.set(I.rx * fq * Math.sin(ph) * Math.cos(th), I.ry * fq * Math.cos(ph), I.rz * fq * Math.sin(ph) * Math.sin(th));
+      d.rotation.set(this.rr(0, 3), this.rr(0, 3), this.rr(0, 3));
+      rib.add(d);
+    }
+    g.add(this.reg(0, 'ribosome', rib, { fixed: true, anchor: new T.Vector3(-0.2, 1.1, 0.5) }));
+
+    /* cytosquelette : microtubules corticaux + faisceaux d'actine */
+    const cyt = new T.Group();
+    const mtM = this.clipMat(0x7fd0e8, { roughness: 0.4, transparent: true, opacity: 0.5 });
+    for (let i = 0; i < 13; i++) {
+      const lat = this.rr(-0.8, 0.8), ph0 = this.rr(0, 6.3), span = this.rr(1.2, 2.6) * (this.rnd() > 0.5 ? 1 : -1);
+      const pts = [];
+      for (let j = 0; j <= 26; j++) {
+        const t = j / 26, ang = ph0 + t * span;
+        let cy = lat + Math.sin(t * Math.PI * 1.3) * 0.22;
+        cy = Math.max(-0.9, Math.min(0.9, cy));
+        const r = Math.sqrt(1 - cy * cy);
+        pts.push(this.sqSurf(I, r * Math.cos(ang), cy, r * Math.sin(ang), 0.93 + this.rr(-0.02, 0.02)));
+      }
+      cyt.add(new T.Mesh(this.tubeG(pts, 0.014, 52, 6), mtM));
+    }
+    const acM = this.clipMat(0xa6e3f0, { roughness: 0.45, transparent: true, opacity: 0.6 });
+    for (let i = 0; i < 9; i++) {
+      const th = this.rr(0, 6.3), ph = Math.acos(this.rr(-1, 1)), th2 = th + this.rr(1.6, 4.4), ph2 = Math.acos(this.rr(-1, 1));
+      const p1 = this.sqSurf(I, Math.sin(ph) * Math.cos(th), Math.cos(ph), Math.sin(ph) * Math.sin(th), 0.9);
+      const p2 = this.sqSurf(I, Math.sin(ph2) * Math.cos(th2), Math.cos(ph2), Math.sin(ph2) * Math.sin(th2), 0.9);
+      cyt.add(new T.Mesh(this.tubeG(this.wiggle(p1, p2, 10, 0.32), 0.008, 54, 5), acM));
+    }
+    g.add(this.reg(0, 'cytosquelette', cyt, { fixed: true, anchor: new T.Vector3(1.5, -0.9, 0.4) }));
+
+    /* grains d'amidon (stroma libre) + oléosomes */
+    const am = new T.Group();
+    const amM = this.clipMat(0xe8e2cf, { roughness: 0.62 });
+    [[0.28, -0.44, 0.54], [-0.52, -0.32, 0.6]].forEach(p => {
+      const s = new T.Mesh(this.blob(0.12, 22, 0.1, 0.8), amM);
+      s.position.set(p[0], p[1], p[2]);
+      s.rotation.set(this.rr(-1, 1), this.rr(-1, 1), this.rr(-1, 1));
+      am.add(s);
+    });
+    g.add(this.reg(0, 'amidon', am, { fixed: true, kids: true, anchor: new T.Vector3(0.28, -0.42, 0.52) }));
+
+    const ol = new T.Group();
+    const olM = this.clipMat(0xf0cf72, { roughness: 0.22, metalness: 0.1, transparent: true, opacity: 0.92 });
+    [[1.05, -0.7, 0.45], [-0.15, 1.05, -0.35], [1.55, 0.62, 0.1]].forEach(p => {
+      const s = new T.Mesh(this.blob(this.rr(0.07, 0.1), 18, 0.07), olM);
+      s.position.set(p[0], p[1], p[2]); ol.add(s);
+    });
+    g.add(this.reg(0, 'oleosome', ol, { fixed: true, kids: true, anchor: new T.Vector3(1.05, -0.7, 0.45) }));
+
+    /* plasmodesmes : canal + desmotubule */
+    const pd = new T.Group();
+    const pdM = this.clipMat(0x35c9b0, { roughness: 0.42, transparent: true, opacity: 0.92, side: T.DoubleSide });
+    const dtM = this.clipMat(0xdd7fae, { roughness: 0.5 });
+    [[-1.9, 0.45, 0], [-1.9, -0.2, 0.3], [1.92, 0.3, -0.2], [1.92, -0.4, 0.1], [-1.88, 0.15, -0.35]].forEach(p => {
+      const grp = new T.Group();
+      const c = new T.Mesh(new T.CylinderGeometry(0.052, 0.052, 0.32, 16, 1, true), pdM);
+      const d = new T.Mesh(new T.CylinderGeometry(0.017, 0.017, 0.36, 10), dtM);
+      const f1 = new T.Mesh(new T.TorusGeometry(0.055, 0.014, 6, 18), pdM);
+      const f2 = f1.clone();
+      f1.position.y = 0.16; f2.position.y = -0.16;
+      f1.rotation.x = Math.PI / 2; f2.rotation.x = Math.PI / 2;
+      grp.add(c, d, f1, f2);
+      grp.rotation.z = Math.PI / 2; grp.position.set(p[0], p[1], p[2]); pd.add(grp);
+    });
+    g.add(this.reg(0, 'plasmodesme', pd, { fixed: true, anchor: new T.Vector3(-1.9, 0.45, 0.1) }));
+
+    /* peroxysomes : matrice + cœur cristallin de catalase */
+    const px = new T.Group();
+    [[0.8, 0.32, 0.5], [-0.42, 0.98, 0.15], [0.62, -0.6, -0.42]].forEach(p => {
+      const grp = new T.Group();
+      // Meme structure qu'auparavant, mais palette de la cellule animale : c'est le
+      // meme organite des deux cotes.
+      grp.add(new T.Mesh(new T.IcosahedronGeometry(0.1, 3), this.clipMat(0x6f93d8, { roughness: 0.5, transparent: true, opacity: 0.62, side: T.DoubleSide, emissive: 0x1f2f66, emissiveIntensity: 0.5 })));
+      const core = new T.Mesh(new T.OctahedronGeometry(0.042, 0), this.clipMat(0xdfeaff, { roughness: 0.3, metalness: 0.12, emissive: 0x3a4a6b, emissiveIntensity: 0.4 }));   // assombri : un emissif clair rendait le survol invisible
+      core.rotation.set(this.rr(0, 2), this.rr(0, 2), this.rr(0, 2));
+      grp.add(core);
+      grp.position.set(p[0], p[1], p[2]); px.add(grp);
+    });
+    g.add(this.reg(0, 'peroxysome', px, { fixed: true, kids: true, anchor: new T.Vector3(0.78, 0.3, 0.5) }));
+
+    /* les enveloppes translucides ne doivent pas s'occulter entre elles */
+    g.traverse(o => {
+      if (!o.isMesh) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+        if (m && m.transparent && m.opacity < 0.8) m.depthWrite = false;
+      });
+    });
+    return g;
+  }
+
+  miniChloroplast() {
+    const T = this.T, c = new T.Group();
+    c.add(new T.Mesh(this.warp(this.sq(0.37, 0.175, 0.27, 2.5, 52), 0.05, 7), this.clipMat(0x6fa845, { side: T.DoubleSide, transparent: true, opacity: 0.34, roughness: 0.72 })));
+    c.add(new T.Mesh(this.warp(this.sq(0.345, 0.155, 0.25, 2.5, 44), 0.05, 7.4), this.clipMat(0x2b7d3f, { side: T.DoubleSide, transparent: true, opacity: 0.42, roughness: 0.78 })));
+    const grM = this.clipMat(0x0f4a28, { roughness: 0.68 });
+    const lamM = this.clipMat(0x3f9c5c, { roughness: 0.7, transparent: true, opacity: 0.85 });
+    const hubs = [];
+    const nSt = 5;
+    for (let s = 0; s < nSt; s++) {
+      const st = new T.Group();
+      const nd = 4 + Math.round(this.rnd() * 3), rad = this.rr(0.055, 0.085);
+      for (let i = 0; i < nd; i++) {
+        const d = new T.Mesh(new T.CylinderGeometry(rad * this.rr(0.92, 1.05), rad * this.rr(0.92, 1.05), 0.014, 18), grM);
+        d.position.set(this.rr(-0.006, 0.006), (i - (nd - 1) / 2) * 0.026, this.rr(-0.006, 0.006));
+        st.add(d);
+      }
+      const pos = [this.rr(-0.22, 0.22), this.rr(-0.05, 0.05), this.rr(-0.13, 0.13)];
+      st.position.set(pos[0], pos[1], pos[2]);
+      st.rotation.set(this.rr(-0.55, 0.55), this.rr(0, 3), this.rr(-0.55, 0.55));
+      hubs.push(pos);
+      c.add(st);
+    }
+    for (let i = 0; i < hubs.length - 1; i++) {
+      const b = new T.Mesh(this.tubeG(this.wiggle(hubs[i], hubs[i + 1], 6, 0.05), 0.009, 26, 5), lamM);
+      c.add(b);
+    }
+    const st2 = new T.Mesh(this.blob(0.072, 16, 0.1, 0.85), this.clipMat(0xe8e2cf, { roughness: 0.62 }));
+    st2.position.set(-0.17, 0.0, 0.05); c.add(st2);
+    const pg = this.clipMat(0xe8c667, { roughness: 0.3 });
+    for (let i = 0; i < 3; i++) {
+      const s = new T.Mesh(new T.SphereGeometry(this.rr(0.016, 0.026), 10, 8), pg);
+      s.position.set(this.rr(-0.28, 0.28), this.rr(-0.08, 0.08), this.rr(-0.16, 0.16));
+      c.add(s);
+    }
+    return c;
+  }
+
+  /* ---------- level 2 : chloroplast ---------- */
+  buildLevel2() {
+    const T = this.T, g = new T.Group();
+    const O = { rx: 2.12, ry: 1.0, rz: 1.36, n: 2.7 }, I = { rx: 2.0, ry: 0.9, rz: 1.25, n: 2.7 };
+    this.shellDefs[1] = { O, I };
+    const env = new T.Mesh(this.sq(O.rx, O.ry, O.rz, O.n, 96), this.clipMat(0x6fa845, { side: T.DoubleSide, roughness: 0.8, transparent: true, opacity: 0.94 }));
+    const inn = new T.Mesh(this.sq(I.rx, I.ry, I.rz, I.n, 96), this.clipMat(0x2f8b45, { side: T.DoubleSide, roughness: 0.7, transparent: true, opacity: 0.9 }));
+    const cap = new T.Mesh(this.capGeom(O, I, this.cutZ(1)), this.mat(0xbcd487, { side: T.DoubleSide, roughness: 0.78 }));
+    this.capRec[1] = { mesh: cap, O, I };
+    g.add(env, inn, cap);
+    this.reg(1, 'enveloppe', env, { fixed: true, anchor: new T.Vector3(-1.5, 0.75, 0.4) });
+    const str = new T.Mesh(this.sq(I.rx * 0.985, I.ry * 0.985, I.rz * 0.985, I.n, 64), this.clipMat(0x123f28, { side: T.BackSide, roughness: 1, transparent: true, opacity: 0.9 }));
+    g.add(this.reg(1, 'stroma', str, { fixed: true, anchor: new T.Vector3(1.35, 0.55, 0.3) }));
+
+    /* --- Grana ---------------------------------------------------------------
+       13 piles de 8 a 14 thylakoides (contre 7 piles de 5 a 8 auparavant). Chaque
+       disque recoit une couronne plus sombre : c'est ce lisere qui donne l'epaisseur
+       du lumen et empeche la pile de se lire comme un empilement de jetons plats.  */
+    const grG = new T.Group();
+    const grM = this.clipMat(0x2f9457, { roughness: 0.72, side: T.DoubleSide, transparent: true, opacity: 0.97 });
+    const rimM = this.clipMat(0x1c6b3a, { roughness: 0.85, side: T.DoubleSide, transparent: true, opacity: 0.95 });
+    const stacks = [
+      [-1.52, 0.06, 0.06], [-1.32, 0.10, 0.10], [-0.95, 0.38, -0.32], [-0.62, -0.30, 0.35],
+      [-0.28, 0.14, 0.46], [-0.05, 0.30, -0.10], [0.20, -0.35, -0.40], [0.42, 0.34, 0.22],
+      [0.55, -0.28, 0.30], [0.88, 0.06, -0.34], [1.15, 0.18, 0.05], [1.38, -0.24, 0.28],
+      [1.55, 0.30, -0.10]
+    ];
+    const stackPos = [];
+    stacks.forEach(p => {
+      const st = new T.Group();
+      const nd = 8 + Math.round(this.rnd() * 6);
+      const rad = this.rr(0.22, 0.33);
+      for (let i = 0; i < nd; i++) {
+        const d = new T.Mesh(new T.CylinderGeometry(rad, rad, 0.03, 30), grM);
+        d.position.y = (i - (nd - 1) / 2) * 0.075;
+        st.add(d);
+        const rim = new T.Mesh(new T.TorusGeometry(rad, 0.014, 6, 26), rimM);
+        rim.rotation.x = Math.PI / 2;
+        rim.position.y = d.position.y;
+        st.add(rim);
+      }
+      st.position.set(p[0], p[1], p[2]);
+      st.rotation.set(this.rr(-0.3, 0.3), this.rr(0, 3), this.rr(-0.26, 0.26));
+      stackPos.push(st.position.clone());
+      grG.add(st);
+    });
+    g.add(this.reg(1, 'granum', grG, { fixed: true, kids: true, anchor: new T.Vector3(-1.32, 0.35, 0.15) }));
+
+    /* --- Lamelles stromatiques ------------------------------------------------
+       Elles ne sont plus des plaquettes posees au hasard : chacune relie reellement
+       deux grana voisins, ce qui est leur role. Une courbe de Catmull-Rom legerement
+       bombee entre les deux piles, rendue en ruban.                               */
+    const lam = new T.Group();
+    const lamM = this.clipMat(0x59bd7d, { side: T.DoubleSide, roughness: 0.72, transparent: true, opacity: 0.8 });
+    for (let i = 0; i < stackPos.length - 1; i++) {
+      const A = stackPos[i], B = stackPos[i + 1];
+      if (A.distanceTo(B) > 1.15) continue;                 // trop loin : pas de liaison
+      const mid = A.clone().add(B).multiplyScalar(0.5);
+      mid.y += this.rr(-0.16, 0.16); mid.z += this.rr(-0.12, 0.12);
+      const curve = new T.CatmullRomCurve3([A, mid, B]);
+      const rib = new T.Mesh(new T.TubeGeometry(curve, 14, 0.035, 5, false), lamM);
+      rib.scale.y = 0.42;                                   // aplati : c'est un feuillet
+      lam.add(rib);
+    }
+    g.add(this.reg(1, 'thylakoide', lam, { fixed: true, kids: true, anchor: new T.Vector3(0.4, -0.5, 0.4) }));
+
+    /* --- Ribosomes plastidiaux (70S) ------------------------------------------
+       Non cliquables a dessein : la fiche « ribosome » appartient deja au niveau
+       cellule, et `parts` est indexe globalement. Ils sont ici de la matiere de fond,
+       et c'est surtout eux qui donnent au stroma sa densite.                       */
+    {
+      const N = 190;
+      const rib = new T.InstancedMesh(new T.SphereGeometry(0.022, 7, 6),
+        this.clipMat(0x9fd8b4, { roughness: 0.8 }), N);
+      const m4 = new T.Matrix4();
+      for (let i = 0; i < N; i++) {
+        m4.makeTranslation(this.rr(-1.85, 1.85), this.rr(-0.72, 0.72), this.rr(-1.05, 1.05));
+        rib.setMatrixAt(i, m4);
+      }
+      rib.instanceMatrix.needsUpdate = true;
+      g.add(rib);
+    }
+
+    const am = new T.Group();
+    const amM = this.clipMat(0xe4ddc8, { roughness: 0.72 });
+    [[-0.35, -0.05, 0.55], [1.4, -0.3, -0.2], [-1.15, -0.34, -0.5]].forEach(p => {
+      const s = new T.Mesh(new T.SphereGeometry(0.3, 26, 20), amM);
+      s.scale.set(1, 0.72, 0.85); s.position.set(p[0], p[1], p[2]); am.add(s);
+      // couches concentriques du grain d'amidon
+      const sh = new T.Mesh(new T.SphereGeometry(0.31, 22, 16),
+        this.clipMat(0xd8cfb4, { roughness: 0.9, side: T.BackSide, transparent: true, opacity: 0.45 }));
+      sh.scale.copy(s.scale); sh.position.copy(s.position); am.add(sh);
+    });
+    g.add(this.reg(1, 'amidon2', am, { fixed: true, kids: true, anchor: new T.Vector3(-0.35, 0.1, 0.55) }));
+
+    const nk = new T.Group();
+    const nkM = this.clipMat(0xa78bfa, { roughness: 0.5 });
+    for (let i = 0; i < 7; i++) {
+      const t = new T.Mesh(new T.TorusGeometry(this.rr(0.10, 0.22), 0.018, 8, 26), nkM);
+      t.position.set(this.rr(-0.18, 0.18), this.rr(-0.12, 0.12), this.rr(-0.14, 0.14));
+      t.rotation.set(this.rr(0, 3), this.rr(0, 3), this.rr(0, 3));
+      nk.add(t);
+    }
+    nk.position.set(0.85, 0.42, 0.45);
+    g.add(this.reg(1, 'nucleoide', nk));
+
+    const pg = new T.Group();
+    const pgM = this.clipMat(0xe8c667, { roughness: 0.35 });
+    for (let i = 0; i < 14; i++) {
+      const sp = new T.Mesh(new T.SphereGeometry(this.rr(0.045, 0.095), 14, 12), pgM);
+      sp.position.set(this.rr(-1.7, 1.7), this.rr(-0.6, 0.6), this.rr(-0.85, 0.85));
+      pg.add(sp);
+    }
+    g.add(this.reg(1, 'plastoglobule', pg, { fixed: true, kids: true, anchor: new T.Vector3(0.9, -0.45, 0.5) }));
+    return g;
+  }
+
+  /* ---------- level 3 : thylakoid membrane ---------- */
+  buildLevel3() {
+    const T = this.T, g = new T.Group();
+
+    /* --- Bicouche lipidique ---------------------------------------------------
+       La dalle seule se lisait comme un bloc de gelee. On lui pose ses vraies tetes
+       polaires : deux nappes de spheres sur les faces externe et interne, en
+       InstancedMesh pour que 900 tetes ne coutent que deux appels de rendu.
+       C'est ce qui transforme le bloc en membrane.                               */
+    const bic = new T.Group();
+    const slab = new T.Mesh(this.sq(1.9, 0.34, 1.22, 4.5, 80),
+      this.mat(0x3f8f66, { side: T.DoubleSide, transparent: true, opacity: 0.18, roughness: 0.6 }));
+    bic.add(slab);
+    const headM = this.mat(0x8fd9b0, { roughness: 0.55 });
+    const tailM = this.mat(0x5aa87e, { roughness: 0.8, transparent: true, opacity: 0.5 });
+    const NH = 460, m4 = new T.Matrix4();
+    [1, -1].forEach(sign => {
+      const heads = new T.InstancedMesh(new T.SphereGeometry(0.032, 8, 6), headM, NH);
+      const tails = new T.InstancedMesh(new T.CylinderGeometry(0.011, 0.011, 0.17, 5), tailM, NH);
+      for (let i = 0; i < NH; i++) {
+        // disque de Fibonacci : reparti sans grille visible ni paquets
+        const t = (i + 0.5) / NH, r = Math.sqrt(t), ang = i * 2.39996;
+        const x = Math.cos(ang) * r * 1.82, z = Math.sin(ang) * r * 1.16;
+        m4.makeTranslation(x, sign * 0.325, z);
+        heads.setMatrixAt(i, m4);
+        m4.makeTranslation(x, sign * 0.235, z);
+        tails.setMatrixAt(i, m4);
+      }
+      heads.instanceMatrix.needsUpdate = true; tails.instanceMatrix.needsUpdate = true;
+      bic.add(heads, tails);
+    });
+    g.add(this.reg(2, 'bicouche', bic, { fixed: true, anchor: new T.Vector3(-2.0, 0.5, 0.6) }));
+
+    const lum = new T.Mesh(this.sq(1.84, 0.14, 1.16, 4.5, 64),
+      this.mat(0x17566b, { side: T.DoubleSide, transparent: true, opacity: 0.72, roughness: 0.65 }));
+    g.add(this.reg(2, 'lumen', lum, { fixed: true, anchor: new T.Vector3(1.9, -0.35, 0.5) }));
+
+    /* --- Photosysteme II ------------------------------------------------------
+       Dimere transmembranaire, ceinture d'antennes collectrices (LHCII) tout autour,
+       et le complexe d'oxydation de l'eau accroche cote lumen.                    */
+    const psii = new T.Group();
+    const p2m = this.mat(0x2a7d57, { roughness: 0.45 });
+    [-0.16, 0.16].forEach(dx => {
+      for (let k = 0; k < 3; k++) {
+        const c = new T.Mesh(new T.CylinderGeometry(0.075, 0.085, 0.66, 14), p2m);
+        c.position.set(dx + (k - 1) * 0.075, 0, (k % 2 ? 0.06 : -0.06));
+        psii.add(c);
+      }
+    });
+    const antM = this.mat(0x3aa564, { roughness: 0.5 });
+    for (let i = 0; i < 14; i++) {                       // ceinture d'antennes
+      const a2 = (i / 14) * Math.PI * 2, rr = 0.34 + this.rr(-0.03, 0.03);
+      const s2 = new T.Mesh(new T.CylinderGeometry(0.055, 0.055, 0.5, 10), antM);
+      s2.position.set(Math.cos(a2) * rr, this.rr(-0.05, 0.05), Math.sin(a2) * rr * 0.8);
+      psii.add(s2);
+    }
+    const oec = new T.Group();
+    for (let i = 0; i < 4; i++) {                        // amas Mn4CaO5
+      const mnS = new T.Mesh(new T.SphereGeometry(0.032, 10, 8), this.mat(0xe8a04a, { roughness: 0.3 }));
+      mnS.position.set(this.rr(-0.05, 0.05), this.rr(-0.03, 0.03), this.rr(-0.05, 0.05));
+      oec.add(mnS);
+    }
+    oec.position.set(0, -0.32, 0.1); psii.add(oec);
+    psii.position.set(-1.08, 0, 0.14);
+    g.add(this.reg(2, 'psii', psii));
+
+    /* --- Cytochrome b6f : dimere, huit sous-unites --------------------------- */
+    const cyt = new T.Group();
+    const cm = this.mat(0x2a8090, { roughness: 0.5 });
+    [-0.085, 0.085].forEach(dx => {
+      for (let k = 0; k < 4; k++) {
+        const a2 = (k / 4) * Math.PI * 2;
+        const c = new T.Mesh(new T.CylinderGeometry(0.045, 0.05, 0.58, 10), cm);
+        c.position.set(dx + Math.cos(a2) * 0.055, 0, Math.sin(a2) * 0.055);
+        cyt.add(c);
+      }
+    });
+    const pc = new T.Mesh(new T.SphereGeometry(0.06, 14, 10), this.mat(0x5fd0e2, { roughness: 0.4 }));
+    pc.position.set(0.02, -0.3, 0.1); cyt.add(pc);
+    cyt.position.set(-0.24, 0, -0.24);
+    g.add(this.reg(2, 'cytb6f', cyt));
+
+    /* --- Photosysteme I : coeur + antennes, plus le cylindre a 8 faces -------- */
+    const psi = new T.Group();
+    const pim = this.mat(0x3aa866, { roughness: 0.5 });
+    for (let i = 0; i < 9; i++) {
+      const a2 = (i / 9) * Math.PI * 2;
+      const c = new T.Mesh(new T.CylinderGeometry(0.06, 0.065, 0.62, 12), pim);
+      c.position.set(Math.cos(a2) * 0.17, 0, Math.sin(a2) * 0.17);
+      psi.add(c);
+    }
+    psi.add(new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 0.6, 14), pim));
+    const fd = new T.Mesh(new T.SphereGeometry(0.08, 16, 12), this.mat(0xd2e07a, { roughness: 0.4 }));
+    fd.position.set(0.1, 0.42, 0.06); psi.add(fd);
+    psi.position.set(0.42, 0, 0.26);
+    g.add(this.reg(2, 'psi', psi));
+
+    /* --- ATP synthase : anneau c de F0, tige, et tete F1 en alpha3-beta3 ------ */
+    const atp = new T.Group();
+    const f0M = this.mat(0xd89a4a, { roughness: 0.45 });
+    for (let i = 0; i < 14; i++) {
+      const a2 = (i / 14) * Math.PI * 2;
+      const c = new T.Mesh(new T.CylinderGeometry(0.032, 0.032, 0.6, 8), f0M);
+      c.position.set(Math.cos(a2) * 0.15, 0, Math.sin(a2) * 0.15);
+      atp.add(c);
+    }
+    const stalk = new T.Mesh(new T.CylinderGeometry(0.045, 0.045, 0.24, 12), this.mat(0xe8b76a, { roughness: 0.4 }));
+    stalk.position.y = 0.4; atp.add(stalk);
+    const aM = this.mat(0xe0a24a, { roughness: 0.4 }), bM = this.mat(0xf0b968, { roughness: 0.4 });
+    for (let i = 0; i < 6; i++) {                        // alternance alpha / beta
+      const a2 = (i / 6) * Math.PI * 2;
+      const sub = new T.Mesh(new T.SphereGeometry(0.115, 18, 14), i % 2 ? aM : bM);
+      sub.position.set(Math.cos(a2) * 0.13, 0.68, Math.sin(a2) * 0.13);
+      sub.scale.y = 1.15; atp.add(sub);
+    }
+    atp.position.set(1.12, 0, -0.06);
+    g.add(this.reg(2, 'atpsynthase', atp));
+
+    /* --- Plastoquinones : tete + queue isoprenique, mobiles dans la bicouche -- */
+    const pq = new T.Group();
+    const pqM = this.mat(0xe0803a, { roughness: 0.4 });
+    for (let i = 0; i < 9; i++) {
+      const q = new T.Group();
+      q.add(new T.Mesh(new T.SphereGeometry(0.055, 12, 9), pqM));
+      const tail = new T.Mesh(new T.CylinderGeometry(0.012, 0.012, 0.2, 6), pqM);
+      tail.position.y = -0.12; q.add(tail);
+      q.position.set(this.rr(-1.5, 1.5), this.rr(-0.06, 0.06), this.rr(-0.85, 0.85));
+      q.rotation.z = this.rr(-0.4, 0.4);
+      pq.add(q);
+    }
+    g.add(this.reg(2, 'plastoquinone', pq, { fixed: true, kids: true, anchor: new T.Vector3(-0.95, 0.15, 0.45) }));
+    return g;
+  }
+
+  cutZ(level) {
+    const L = this.LEV[level === undefined ? this.curLevel : level];
+    if (!L.clip) return 999;
+    return L.rz * (1.03 - 1.3 * this.S.cut);
+  }
+
+  /* ---------- init ---------- */
+  /* ---- Harmonisation de la matiere -----------------------------------------
+     Les trois strates sont calees sur le rendu de la cellule animale (engine.js),
+     mesure dans sa scene vivante :
+
+         100 % de materiaux transparents · 64 % emissifs
+         saturation moyenne 0.65 · rugosite moyenne 0.58
+
+     La vegetale en etait loin, et de facon croissante avec la profondeur : 20 a 87 %
+     de transparents, AUCUN emissif, et une saturation de 0.79 a 0.90. Des aplats
+     opaques tres satures sur fond violet sombre : c'est ce qui donnait l'impression
+     de neon, pas un glow reel.
+
+     On ne reecrit pas les couleurs a la main : on applique une transformation aux
+     materiaux existants, ce qui preserve les choix de teinte du modele tout en
+     ramenant sa matiere dans la meme famille que les deux autres cellules.        */
+  harmonise(group) {
+    const T = this.T || window.THREE;
+    const SAT = 0.65, ROUGH = 0.58;
+    const seen = new Set();
+
+    // Couleurs du groupe, dedupliquees.
+    const cols = [];
+    group.traverse(o => {
+      if (!(o.isMesh || o.isInstancedMesh || o.isPoints)) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+        if (!m || !m.color || seen.has(m.uuid + ':s')) return;
+        seen.add(m.uuid + ':s'); cols.push(m.color);
+      });
+    });
+    // Desaturation par rapprochement vers le gris de meme luminance. On itere jusqu'a
+    // atteindre la cible plutot que d'appliquer un facteur en une fois : la saturation
+    // se mesure en (max-min)/max, et un facteur applique dans l'espace HSL n'y atterrit
+    // pas — c'est l'erreur que faisait la version precedente, qui visait 0.65 et
+    // s'arretait a 0.79.
+    const satOf = c => { const mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx ? (mx - mn) / mx : 0; };
+    const moyenne = () => cols.reduce((a, c) => a + satOf(c), 0) / (cols.length || 1);
+    for (let i = 0; i < 24 && moyenne() > SAT; i++) {
+      for (const c of cols) {
+        const g = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+        c.lerp({ r: g, g: g, b: g, isColor: true }, 0.05);
+      }
+    }
+
+    const done = new Set();
+    group.traverse(o => {
+      const pts = !!o.isPoints, sprite = !!o.isSprite;
+      if (!(o.isMesh || o.isInstancedMesh || pts || sprite)) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+        if (!m || done.has(m.uuid)) return;
+        done.add(m.uuid);
+
+        // Emissif derive de la couleur de base : c'est lui qui donne la lueur interne
+        // de la cellule animale. On ne l'ajoute que s'il est encore noir, pour ne pas
+        // ecraser un choix delibere du modele.
+        if ('emissive' in m && m.emissive && m.emissive.getHex() === 0x000000 && m.color) {
+          m.emissive.copy(m.color).multiplyScalar(0.28);
+          if ('emissiveIntensity' in m) m.emissiveIntensity = 0.45;
+        }
+        // Garde-fou : au repos un organite doit rester MOINS lumineux qu'au survol,
+        // faute de quoi le surlignage l'assombrit et se lit comme « rien ne se passe ».
+        // C'est ce qui rendait le noyau et le peroxysome muets au pointeur.
+        if (m.emissive) {
+          const L = 0.2126 * m.emissive.r + 0.7152 * m.emissive.g + 0.0722 * m.emissive.b;
+          if (L > 0.26) m.emissive.multiplyScalar(0.26 / L);
+        }
+
+        if (m.roughness != null) m.roughness = m.roughness * 0.5 + ROUGH * 0.5;
+
+        // Tout passe en transparent, comme la cellule animale. Les materiaux deja
+        // translucides gardent leur opacite ; les opaques reculent juste assez pour
+        // que les couches se lisent les unes a travers les autres.
+        if (!pts && !sprite) {
+          if (!m.transparent || m.opacity >= 0.995) { m.transparent = true; m.opacity = 0.92; }
+          if ('depthWrite' in m) m.depthWrite = m.opacity > 0.85;
+        }
+        m.needsUpdate = true;
+      });
+    });
+  }
+
+  init() {
+    const S = this.S;
+    const VER = 24;
+    if (S.owner && S.owner !== this && S.ver !== VER) {
+      const o = S.owner;
+      if (o._raf) cancelAnimationFrame(o._raf);
+      if (o.renderer) { o.renderer.dispose(); const el = o.renderer.domElement; if (el.parentNode) el.parentNode.removeChild(el); }
+      S.owner = null;
+    }
+    S.ver = VER;
+    if (S.owner && S.owner !== this && S.owner.renderer && document.contains(S.owner.renderer.domElement)) { this.deferred = true; return; }
+    S.owner = this;
+    this.curLevel = S.level;
+    this.appliedCut = S.cut;
+    const T = window.THREE; this.T = T;
+    try { T.ColorManagement.legacyMode = false; } catch (e) { }
+    const host = this.hostRef.current;
+    this.hostEl = host;
+    const w = host.clientWidth || 1440, h = host.clientHeight || 900;
+    const renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setSize(w, h);
+    renderer.localClippingEnabled = true;
+    // r152 a remplace outputEncoding/sRGBEncoding par outputColorSpace/SRGBColorSpace.
+    // Le composant vient de r149 ; on ecrit la forme moderne, avec repli sur l'ancienne.
+    try {
+      if ('outputColorSpace' in renderer) renderer.outputColorSpace = T.SRGBColorSpace;
+      else renderer.outputEncoding = T.sRGBEncoding;
+    } catch (e) { }
+    try { renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.02; } catch (e) { }
+    renderer.domElement.style.display = 'block';
+    host.appendChild(renderer.domElement);
+    this.renderer = renderer;
+
+    const scene = new T.Scene(); this.scene = scene;
+    const camera = new T.PerspectiveCamera(34, w / h, 0.05, 120); this.camera = camera;
+    scene.add(new T.AmbientLight(0xffffff, 0.16));
+    scene.add(new T.HemisphereLight(0x9fd0ff, 0x2c1a48, 0.42));
+    const d1 = new T.DirectionalLight(0xfff1e2, 1.35); d1.position.set(2.6, 3.4, 3.2); scene.add(d1);
+    const d2 = new T.DirectionalLight(0x74c8f5, 0.45); d2.position.set(-3.2, -1.4, 1.6); scene.add(d2);
+    const d3 = new T.DirectionalLight(0xff9fd0, 0.3); d3.position.set(0.5, -2.4, -3); scene.add(d3);
+    const pl = new T.PointLight(0x7fffd8, 0.28, 8, 2); pl.position.set(0, 0.25, 0.7); scene.add(pl);
+
+    this.plane = new T.Plane(new T.Vector3(0, 0, -1), this.cutZ(this.curLevel));
+    this.nucPlane = new T.Plane(new T.Vector3(0, 0, -1), 1e6);   // 1e6 = coupe inactive
+
+    this.groups = [this.buildLevel1(), this.buildLevel2(), this.buildLevel3()];
+    // Reference = la strate 1 telle qu'elle etait cadree : son echelle de base vaut 1,
+    // les deux autres sont ramenees a la meme taille apparente pour eviter un saut.
+    const TARGET = this.measureMaxDim(this.groups[0]);
+    this.baseScale = this.groups.map(g => TARGET / this.measureMaxDim(g));
+    this.groups.forEach(g => this.harmonise(g));
+    // harmonise() modifie les emissifs APRES que reg() ait memorise leur valeur de repos
+    // dans userData.e0. Sans cette remise a jour, survoler un organite puis le quitter le
+    // repeindrait en noir et defairait la passe matiere, organite par organite.
+    for (const id in this.parts) {
+      const part = this.parts[id];
+      if (part && part.mats) part.mats.forEach(m => { if (m.emissive) m.userData.e0 = m.emissive.getHex(); });
+    }
+    this.groups.forEach((g, i) => { g.visible = i === this.curLevel; scene.add(g); });
+
+    if (this.props.particles !== false) {
+      const n = 420, pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const r = this.rr(3.2, 9), th = this.rr(0, Math.PI * 2), ph = Math.acos(this.rr(-1, 1));
+        pos[i * 3] = r * Math.sin(ph) * Math.cos(th); pos[i * 3 + 1] = r * Math.cos(ph) * 0.7; pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+      }
+      const pg = new T.BufferGeometry(); pg.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+      this.dust = new T.Points(pg, new T.PointsMaterial({ color: 0x9fe8dc, size: 0.035, transparent: true, opacity: 0.4, depthWrite: false }));
+      scene.add(this.dust);
+    }
+
+    const L = this.LEV[this.curLevel];
+    // La camera ne recule plus d'une strate a l'autre : ce sont les modeles qui
+    // changent d'echelle sous elle. C'est tout le principe du powers of ten.
+    this.RAD = L.rad;
+    this.cam = { theta: L.theta, phi: L.phi, rad: this.RAD, tRad: this.RAD };
+    this.ray = new T.Raycaster();
+    this.spreadCur = S.spread;
+    this.appliedReset = S.resetView;
+    this.bindEvents(host);
+    this.applyCut();
+    this.resize();
+    this.loop(0);
+  }
+
+  resize() {
+    const host = this.hostEl || this.hostRef.current; if (!host || !this.renderer) return;
+    const w = host.clientWidth || 1, h = host.clientHeight || 1;
+    this.lastW = w; this.lastH = h;
+    this.renderer.setSize(w, h); this.camera.aspect = w / h;
+    this.camera.setViewOffset(w, h, -w * 0.05, h * 0.03, w, h);
+    this.camera.updateProjectionMatrix();
+  }
+
+  bindEvents(host) {
+    const el = this.renderer.domElement;
+    let dragging = false, lx = 0, ly = 0, moved = 0;
+    el.addEventListener('pointerdown', e => {
+      dragging = true; moved = 0; lx = e.clientX; ly = e.clientY; el.style.cursor = 'grabbing';
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', e => {
+      const r = el.getBoundingClientRect();
+      this.ptr = { x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1, cx: e.clientX - r.left, cy: e.clientY - r.top };
+      if (dragging) {
+        const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
+        moved += Math.abs(dx) + Math.abs(dy);
+        this.cam.theta -= dx * 0.006;
+        this.cam.phi = Math.max(0.3, Math.min(2.75, this.cam.phi - dy * 0.006));
+      }
+    });
+    el.addEventListener('pointerup', e => {
+      el.style.cursor = 'grab';
+      if (dragging && moved < 6) this.doPick();
+      dragging = false;
+    });
+    el.addEventListener('pointerleave', () => { this.ptr = null; this.setHover(null); });
+    el.addEventListener('wheel', e => {
+      e.preventDefault();
+      // Meme geste et meme coefficient que la plongee de la cellule animale.
+      this.depthTarget = Math.max(0, Math.min(this.Pmax, this.depthTarget - e.deltaY * 0.0016));
+    }, { passive: false });
+
+    // Clavier, comme la plongee : bas = plonger, haut = remonter.
+    window.addEventListener('keydown', e => {
+      const tg = e.target;
+      if (tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName))) return;
+      const step = d => { this.depthTarget = Math.max(0, Math.min(this.Pmax, this.depthTarget + d)); };
+      if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); step(0.18); }
+      else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); step(-0.18); }
+    });
+  }
+
+  hitTest() {
+    if (!this.ptr) return null;
+    this.ray.setFromCamera({ x: this.ptr.x, y: this.ptr.y }, this.camera);
+    const hits = this.ray.intersectObjects(this.pick[this.curLevel], true);
+    const clip = this.LEV[this.curLevel].clip;
+    for (let i = 0; i < hits.length; i++) {
+      const obj = hits[i].object;
+      // On teste contre le plan qui decoupe REELLEMENT cet objet, pas contre celui de
+      // la cellule. Sans ca le noyau, qui suit nucPlane et reste entier, voyait ses
+      // points rejetes comme « derriere la coupe » : il n'etait plus cliquable.
+      const m = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+      const pl = (m && m.clippingPlanes && m.clippingPlanes[0]) || (clip ? this.plane : null);
+      if (pl && pl.distanceToPoint(hits[i].point) < 0) continue;
+      return obj.userData.oid;
+    }
+    return null;
+  }
+  setHover(id) {
+    if (this.hover === id) return;
+    if (this.hover && this.parts[this.hover]) this.parts[this.hover].mats.forEach(m => { if (m.emissive) { m.emissive.setHex(m.userData.e0 || 0); m.emissiveIntensity = 1; } });
+    this.hover = id;
+    if (id && this.parts[id]) this.parts[id].mats.forEach(m => { if (m.emissive) { m.emissive.setHex(0x2b6b5e); m.emissiveIntensity = 1; } });
+    if (id && this.INFO[id]) document.querySelectorAll('[data-cell-tip]').forEach(t => { t.textContent = this.INFO[id].name; });
+    else document.querySelectorAll('[data-cell-tip]').forEach(t => { t.style.transform = 'translate(-9999px,-9999px)'; });
+    if (this.renderer) this.renderer.domElement.style.cursor = id ? 'pointer' : 'grab';
+  }
+  doPick() {
+    const id = this.hitTest();
+    const S = this.S;
+    // Clic dans le vide : on referme les fiches ouvertes. Sans ça elles restaient à l'écran
+    // et s'empilaient jusqu'à trois, sans autre moyen de s'en débarrasser que leur croix.
+    // (le garde `moved < 6` en amont fait qu'une rotation ne passe pas par ici)
+    if (!id || !this.INFO[id]) {
+      if (!S.cards.length) return;
+      S.cards = [];
+      this.sync();
+      return;
+    }
+    S.cards = S.cards.filter(c => c !== id).concat([id]).slice(-3);
+    this.sync();
+  }
+
+  applyCut() {
+    const lv = this.curLevel;
+    const L = this.LEV[lv];
+    const z = this.cutZ(lv);
+    if (this.plane) this.plane.constant = z;
+    // Coupe du noyau, independante de celle de la cellule. A 0 la constante part tres
+    // loin : aucun plan ne le traverse, il reste entier meme cellule grande ouverte.
+    if (this.nucPlane) {
+      const cn = this.S.cutNuc || 0;
+      this.nucPlane.constant = cn <= 0 ? 1e6 : 0.62 - 1.15 * cn;
+    }
+    const rec = this.capRec[lv];
+    if (rec && L.clip) {
+      const g = this.capGeom(rec.O, rec.I, z);
+      rec.mesh.geometry.dispose(); rec.mesh.geometry = g;
+    }
+    [0, 1].forEach(i => { if (this.capRec[i]) this.capRec[i].mesh.visible = i === lv && this.LEV[i].clip; });
+  }
+
+  goLevel(n) {
+    if (n < 0 || n >= this.V.length) return;
+    // On vise la profondeur de la strate ; la plongee s'y rend en continu.
+    this.depthTarget = Math.log10(this.fieldTop / this.V[n]);
+    this.S.cards = [];
+    this.sync();
+  }
+
+  applySpread() {
+    Object.keys(this.parts).forEach(k => {
+      const p = this.parts[k];
+      if (p.level !== this.curLevel) return;
+      if (p.dir.lengthSq() > 0) p.obj.position.copy(p.base).addScaledVector(p.dir, this.spreadCur * 0.3);
+      if (p.kids) p.kids.forEach(c => { c.o.position.copy(c.b).addScaledVector(c.d, this.spreadCur * 0.22); });
+    });
+  }
+
+  /* Coeur de la plongee, identique a celle de la cellule animale : on avance la
+     profondeur vers sa cible, on cherche la paire de strates qui l'encadre et on les
+     croise. Le croisement n'occupe qu'un quart de l'intervalle — le reste du temps
+     une seule strate est a l'ecran, nette.                                        */
+  applyDive() {
+    this.depth += (this.depthTarget - this.depth) * 0.1;
+    const e = this.fieldTop * Math.pow(10, -this.depth);
+    const t = Math.log10(e);
+
+    let n = 0;
+    while (n < this.V.length - 2 && Math.log10(this.V[n + 1]) > t) n++;
+    const a = Math.log10(this.V[n]), o = Math.log10(this.V[n + 1]);
+    const sPos = Math.max(0, Math.min(1, (a - t) / (a - o || 1)));
+    const c = 0.16;
+    const l = sPos < 0.5 - c ? 0 : sPos > 0.6 ? 1 : this.smooth((sPos - (0.5 - c)) / (0.6 - (0.5 - c)));
+
+    const alpha = this.V.map(() => 0), dive = this.V.map(() => 1);
+    alpha[n] = 1 - l; alpha[n + 1] = l;
+    dive[n] = 1 + l * 0.55; dive[n + 1] = 0.5 + 0.5 * l;
+
+    this.groups.forEach((g, i) => {
+      if (alpha[i] <= 0.004) { if (g.visible) g.visible = false; return; }
+      g.visible = true;
+      g.scale.setScalar(this.soft(this.V[i] / e, 6) * this.baseScale[i] * dive[i]);
+      this.setGroupAlpha(g, alpha[i]);
+    });
+
+    let dom = 0, best = 1e9;
+    this.V.forEach((v, i) => { const d = Math.abs(Math.log10(v / e)); if (d < best) { best = d; dom = i; } });
+
+    // Les plans de coupe vivent en coordonnees monde : leurs constantes doivent suivre
+    // l'echelle courante du groupe, sinon les coupes derivent pendant tout le zoom.
+    const k = this.groups[dom].scale.x;
+    if (this.plane) { const L = this.LEV[dom]; this.plane.constant = L.clip ? this.cutZ(dom) * k : 999; }
+    if (this.nucPlane) {
+      const cn = this.S.cutNuc || 0;
+      this.nucPlane.constant = cn <= 0 ? 1e6 : (0.62 - 1.15 * cn) * k;
+    }
+
+    this.curField = e;
+    if (dom !== this.curLevel) {
+      this.curLevel = dom;
+      this.S.level = dom;
+      this.S.cards = [];
+      this.setHover(null);
+      this.applyCut();
+      this.sync();
+    }
+  }
+
+  applyStage(fromLoop) {
+    const S = this.S;
+    if (!this.renderer) return;
+    if (S.cut !== this.appliedCut || S.cutNuc !== this.appliedCutNuc) {
+      this.appliedCut = S.cut; this.appliedCutNuc = S.cutNuc; this.applyCut();
+    }
+    if (S.resetView !== this.appliedReset) {
+      this.appliedReset = S.resetView;
+      const L = this.LEV[this.curLevel];
+      this.cam.theta = L.theta; this.cam.phi = L.phi; this.cam.tRad = this.RAD;
+    }
+    if (!fromLoop && performance.now() - (this.lastTick || 0) > 400) {
+      this.spreadCur = S.spread; this.applySpread();
+      this.cam.rad = this.cam.tRad;
+      this.renderNow();
+    }
+  }
+
+  renderNow() {
+    if (!this.renderer) return;
+    const r = this.cam.rad, ph = this.cam.phi, th = this.cam.theta;
+    this.camera.position.set(r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph), r * Math.sin(ph) * Math.cos(th));
+    this.camera.lookAt(0, 0, 0);
+    const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
+    document.querySelectorAll('[data-card-id]').forEach(el => {
+      const p = this.parts[el.getAttribute('data-card-id')];
+      if (!p) return;
+      const v = (p.anchor ? p.anchor.clone().add(p.obj.position) : p.obj.position.clone());
+      p.obj.parent.localToWorld(v);
+      v.project(this.camera);
+      const x = Math.max(352, Math.min(Math.max(360, w - 332), (v.x * 0.5 + 0.5) * w - 126));
+      const y = Math.max(78, Math.min(h - 190, (-v.y * 0.5 + 0.5) * h - 26));
+      el.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    });
+    const L = this.LEV[this.curLevel];
+    // L'echelle vient de la profondeur, pas de la distance camera : elle ne bouge plus.
+    const val = L.unit === 'nm' ? this.curField * 1000 : this.curField;
+    const txt = (val < 20 ? val.toFixed(1) : Math.round(val)) + ' ' + L.unit;
+    document.querySelectorAll('[data-field]').forEach(fe => { fe.textContent = txt; });
+    const zw = Math.round(Math.max(2, Math.min(100, this.depth / this.Pmax * 100))) + '%';
+    document.querySelectorAll('[data-zoombar]').forEach(zb => { zb.style.width = zw; });
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  loop(t) {
+    this._raf = requestAnimationFrame(tt => this.loop(tt));
+    const dt = Math.min(0.05, (t - (this._last || t)) / 1000); this._last = t;
+    this.lastTick = performance.now();
+    const S = this.S;
+    const hosts = document.querySelectorAll('[data-cell-host]');
+    const host = hosts.length ? hosts[hosts.length - 1] : null;
+    if (host && this.renderer.domElement.parentNode !== host) {
+      host.appendChild(this.renderer.domElement);
+      this.hostEl = host; this.resize();
+    } else if (host && (host.clientWidth !== this.lastW || host.clientHeight !== this.lastH)) {
+      this.hostEl = host; this.resize();
+    }
+    this.applyStage(true);
+    this.applyDive();
+    if (S.rotOn) this.cam.theta += dt * (0.12 + S.rotSpeed * 0.8);
+    this.cam.rad += (this.cam.tRad - this.cam.rad) * Math.min(1, dt * 7);
+    if (this.dust) this.dust.rotation.y += dt * 0.012;
+    this.spreadCur += (S.spread - this.spreadCur) * Math.min(1, dt * 5);
+    this.applySpread();
+    if (this.ptr) this.setHover(this.hitTest());
+    if (this.hover && this.ptr) document.querySelectorAll('[data-cell-tip]').forEach(tp => { tp.style.transform = 'translate(' + (this.ptr.cx + 16) + 'px,' + (this.ptr.cy - 10) + 'px)'; });
+    this.renderNow();
+  }
+
+  slide(e, key) {
+    const track = e.currentTarget;
+    const S = this.S;
+    // Rect FIGE au depart du geste. La fiche est repositionnee a chaque image d'apres son
+    // ancrage 3D, et deplacer le curseur bouge la coupe, donc l'ancrage, donc la fiche.
+    // Remesurer la piste a chaque mouvement creait une boucle de retour : elle sautait
+    // sous le doigt et la valeur partait au hasard.
+    const r = track.getBoundingClientRect();
+    const move = ev => {
+      S[key] = Math.max(0, Math.min(1, (ev.clientX - r.left) / (r.width || 1)));
+      this.sync();
+    };
+    move(e);
+    // Sans ca le navigateur demarre une selection de texte des qu'on sort de la piste :
+    // toute la page se surligne pendant le glissement.
+    e.preventDefault();
+    const selAvant = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    const up = () => {
+      document.body.style.userSelect = selAvant;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  }
+
+  // Glissiere verticale de coupe. La barre exprime la FERMETURE : en haut l'organite
+  // est entier, en bas grand ouvert — meme convention que la cellule animale.
+  slideVert(e, key) {
+    const track = e.currentTarget, S = this.S;
+    // Rect FIGE au depart, pour la meme raison que dans slide().
+    const r = track.getBoundingClientRect();
+    const move = ev => {
+      const fermeture = Math.max(0, Math.min(1, (r.bottom - ev.clientY) / (r.height || 1)));
+      S[key] = 1 - fermeture;
+      this.sync();
+    };
+    move(e);
+    // Sans ca le navigateur demarre une selection de texte des qu'on sort de la piste :
+    // toute la page se surligne pendant le glissement.
+    e.preventDefault();
+    const selAvant = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    const up = () => {
+      document.body.style.userSelect = selAvant;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  }
+
+  renderVals() {
+    const st = this.S, lv = st.level, L = this.LEV[lv];
+    const set = (k, v) => { st[k] = v; this.sync(); };
+    const on = c => c ? '#f1ecf8' : 'rgba(233,227,242,.62)';
+    const dim = c => c ? 'rgba(94,234,212,.85)' : 'rgba(233,227,242,.34)';
+    const dot = c => c ? '#5eead4' : 'rgba(20,13,32,.9)';
+    const V = {
+      hostRef: this.hostRef, rootRef: this.rootRef, tipRef: this.tipRef, fadeRef: this.fadeRef,
+      levelName: L.name.toUpperCase(), levelSize: L.size, levelTag: L.tag,
+      goL1: () => this.goLevel(0), goL2: () => this.goLevel(1), goL3: () => this.goLevel(2),
+      reset: () => { st.cards = []; st.resetView = (st.resetView || 0) + 1; this.sync(); },
+      showRot: st.row === 'rotation', showCut: st.row === 'coupe', showSpread: st.row === 'ecart',
+      rotChev: st.row === 'rotation' ? '⌄' : '›', cutChev: st.row === 'coupe' ? '⌄' : '›', spreadChev: st.row === 'ecart' ? '⌄' : '›',
+      tRot: () => set('row', st.row === 'rotation' ? null : 'rotation'),
+      tCut: () => set('row', st.row === 'coupe' ? null : 'coupe'),
+      tSpread: () => set('row', st.row === 'ecart' ? null : 'ecart'),
+      toggleRot: () => set('rotOn', !st.rotOn),
+      rotLabel: st.rotOn ? Math.round(st.rotSpeed * 100) + ' %' : 'arrêt',
+      rotPct: Math.round(st.rotSpeed * 100) + '%',
+      rotTrack: st.rotOn ? 'rgba(94,234,212,.55)' : 'rgba(255,255,255,.12)',
+      rotKnob: st.rotOn ? '18px' : '2px',
+      onRotSlide: e => this.slide(e, 'rotSpeed'),
+      cutLabel: L.clip ? st.cut.toFixed(2) : 'aucune',
+      cutPct: Math.round(st.cut * 100) + '%',
+      onCutSlide: e => this.slide(e, 'cut'),
+      // Coupe du noyau : reglage distinct de celui de la cellule, cf. nucPlane.
+      onNucSlide: e => this.slide(e, 'cutNuc'),
+      nucPct: Math.round((st.cutNuc || 0) * 100) + '%',
+      nucLabel: (st.cutNuc || 0) <= 0 ? 'entier' : (st.cutNuc).toFixed(2),
+      spreadLabel: st.spread ? 'éclaté' : 'compact',
+      setCompact: () => set('spread', 0), setExploded: () => set('spread', 1),
+      cpBg: st.spread ? 'transparent' : 'rgba(94,234,212,.14)', cpBr: st.spread ? 'rgba(255,255,255,.1)' : 'rgba(94,234,212,.35)', cpFg: st.spread ? 'rgba(233,227,242,.5)' : '#bff3e6',
+      exBg: st.spread ? 'rgba(94,234,212,.14)' : 'transparent', exBr: st.spread ? 'rgba(94,234,212,.35)' : 'rgba(255,255,255,.1)', exFg: st.spread ? '#bff3e6' : 'rgba(233,227,242,.5)',
+      cards: st.cards.map(id => {
+        const c = Object.assign({ id, close: () => { st.cards = st.cards.filter(c2 => c2 !== id); this.sync(); } }, this.INFO[id]);
+        // La membrane commande la coupe de la cellule, l'enveloppe nucleaire celle du
+        // noyau. Aucun autre organite n'en porte : c'est la regle de la cellule animale.
+        const key = id === 'membrane' ? 'cut' : id === 'noyau' ? 'cutNuc' : null;
+        if (key) {
+          const fermeture = 1 - (st[key] || 0);       // la barre montre la fermeture
+          c.hasCut = true;
+          c.cutWhat = id === 'membrane' ? 'cellule' : 'noyau';
+          c.cutPct = Math.round(fermeture * 100) + '%';
+          c.cutVal = Math.round(fermeture * 100) + '%';
+          c.onCut = e => this.slideVert(e, key);
+        }
+        return c;
+      })
+    };
+    /* Boutons carrés du HUD : allumés quand leur réglage est ouvert. */
+    const btn = (a, k) => {
+      V[k + 'BtnBg'] = a ? 'rgba(127,227,210,.14)' : 'rgba(255,255,255,.05)';
+      V[k + 'BtnBr'] = a ? 'rgba(127,227,210,.45)' : 'rgba(255,255,255,.11)';
+      V[k + 'BtnFg'] = a ? '#eafaf5' : '#9fb3c6';
+    };
+    (btn(V.showRot, 'rot'), btn(V.showCut, 'cut'), btn(V.showSpread, 'sp'));
+
+    /* Panneau des organites du niveau courant. Fermé, il se réduit à sa poignée ;
+       ouvert, il déplie sa hauteur et le contenu monte en cascade. */
+    const fams = this.FAMS[lv] || [], famI = Math.min(st.odFam || 0, Math.max(0, fams.length - 1));
+    const shut = !!st.odClosed;
+    ((V.odScope = this.SCOPE[lv] || 'de ce niveau'),
+      (V.odWidth = shut ? '470px' : 'min(700px, calc(100% - 120px))'),
+      (V.odPadBottom = shut ? '0px' : '22px'),
+      (V.odShadow = shut ? '0 -10px 30px rgba(0,0,0,.34)' : '0 -18px 50px rgba(0,0,0,.42)'),
+      (V.odRows = shut ? '0fr' : '1fr'),
+      (V.odInnerOp = shut ? '0' : '1'),
+      (V.odRowMax = shut ? '40px' : '0px'),
+      (V.odRowPadBottom = shut ? '12px' : '0px'),
+      (V.odTxOp = shut ? '1' : '0'),
+      (V.odToggle = () => { st.odClosed = !st.odClosed; this.sync(); }),
+      (V.odFams = fams.map((f, i) => ({
+        name: f.name,
+        dot: (this.INFO[f.ids[0]] || {}).dot || '#5eead4',
+        bg: i === famI ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.05)',
+        br: i === famI ? 'rgba(255,255,255,.22)' : 'rgba(140,195,220,.14)',
+        fg: i === famI ? '#eef4fa' : 'rgba(232,244,250,.72)',
+        delay: (0.08 + i * 0.035).toFixed(3) + 's',
+        pick: () => { st.odFam = i; this.sync(); }
+      }))),
+      (V.odItems = ((fams[famI] || { ids: [] }).ids).filter(id => this.INFO[id]).map((id, i) => ({
+        name: this.INFO[id].name,
+        sub: this.INFO[id].sub,
+        dot: this.INFO[id].dot,
+        bg: st.cards.indexOf(id) >= 0 ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.04)',
+        delay: (0.16 + i * 0.04).toFixed(3) + 's',
+        pick: () => { st.cards = st.cards.filter(c => c !== id).concat([id]).slice(-3); this.sync(); }
+      }))));
+    [0, 1, 2].forEach(i => {
+      const a = lv === i, k = i + 1;
+      V['n' + k] = a ? '#5eead4' : 'rgba(233,227,242,.4)';
+      V['t' + k] = on(a);
+      V['s' + k] = a ? 'rgba(94,234,212,.8)' : 'rgba(233,227,242,.36)';
+      V['d' + k + 'bg'] = dot(a);
+      V['d' + k + 'br'] = dim(a);
+      V['d' + k + 'sh'] = a ? '0 0 12px rgba(94,234,212,.7)' : 'none';
+    });
+    return V;
+  }
+}
+
+DC.mount(
+  CelluleVegetale,
+  // Démarrage compact : l'écartement des organites reste accessible par le bouton É.
+  { autoRotate: false, cut: 0.55, spread: 'compact', particles: true },
+  document.getElementById('root'),
+  document.getElementById('tpl').innerHTML
+);
+</script>
+</body>
+</html>

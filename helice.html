@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modèle 3D d'ADN — carte interactive</title>
+<meta name="description" content="Carte 3D interactive de la double hélice d'ADN : hélice, nucléotide et échelle atomique, séquence modifiable. Complément de la plongée « du chromosome à l'ADN ».">
+<meta name="theme-color" content="#0a0e13">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text x=%220%22 y=%2214%22 font-size=%2214%22>🧬</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0e13; }
+  * { box-sizing: border-box; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+
+  #stage { position: relative; width: 100vw; height: 100vh; overflow: hidden;
+    background: radial-gradient(125% 105% at 50% 0%, #141b22 0%, #0a0e13 55%, #05080b 100%); }
+  #mount { position: absolute; inset: 0; }
+  #mount.grabbing { cursor: grabbing; }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 3px; background: rgba(255,255,255,.16); border-radius: 3px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5.5px; box-shadow: 0 1px 5px rgba(0,0,0,.5); }
+  input[type=range]::-moz-range-track { height: 3px; background: rgba(255,255,255,.16); border-radius: 3px; }
+  input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: none; border-radius: 50%; background: #fff; }
+  @keyframes spin360 { to { transform: rotate(360deg); } }
+
+  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,.55); font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: .18em; }
+  .spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.22); border-top-color: #fff;
+    border-radius: 50%; animation: spin360 .8s linear infinite; margin-right: 13px; }
+
+  .title-block { position: absolute; top: 20px; left: 20px; display: inline-flex; flex-direction: column; gap: 4px;
+    padding: 11px 15px; background: rgba(8,11,15,.34); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.07); border-radius: 11px; pointer-events: none;
+    transition: opacity .25s; }
+  .title-block .t { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .2em; color: rgba(255,255,255,.92); }
+  .title-block .s { font-size: 12px; color: rgba(255,255,255,.5); }
+  /* lien retour vers la plongée principale (index.html) — cette page n'est plus un cul-de-sac */
+  .backlink { position: absolute; top: 20px; right: 20px; z-index: 30; display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 13px; border-radius: 11px; text-decoration: none; cursor: pointer;
+    background: rgba(8,11,15,.5); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(127,227,210,.24); box-shadow: 0 10px 28px rgba(0,0,0,.4);
+    color: #dbeee9; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .05em; transition: background .18s, border-color .18s; }
+  .backlink:hover { background: rgba(16,32,42,.7); border-color: rgba(127,227,210,.5); }
+  .backlink .bico { color: #7fe3d2; font-size: 13px; }
+  @media (max-width: 720px), (pointer: coarse) { .backlink { top: 14px; right: 14px; padding: 8px 11px; } }
+
+  .scale-rail { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); height: 300px;
+    display: flex; align-items: stretch; gap: 12px; pointer-events: none; transition: opacity .25s; }
+  .scale-rail .bar { position: relative; width: 2px;
+    background: linear-gradient(to bottom, rgba(255,255,255,.06), rgba(255,255,255,.22), rgba(255,255,255,.06)); border-radius: 2px; }
+  .scale-rail .marker { position: absolute; left: 50%; top: 0%; width: 11px; height: 11px; margin-left: -5.5px; margin-top: -5.5px;
+    border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.12), 0 2px 8px rgba(0,0,0,.5); transition: top .12s linear; }
+  .scale-rail .ticks { display: flex; flex-direction: column; justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: .12em; color: rgba(255,255,255,.42); }
+
+  .hint { position: absolute; bottom: 18px; left: 20px; padding: 7px 12px; background: rgba(8,11,15,.34); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.06); border-radius: 9px; color: rgba(255,255,255,.5);
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .03em; pointer-events: none; }
+
+  .legend { position: absolute; bottom: 16px; right: 20px; display: flex; gap: 18px; align-items: center;
+    padding: 9px 16px; background: rgba(16,20,26,.74); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 11px; box-shadow: 0 18px 50px rgba(0,0,0,.5); opacity: 0; transition: opacity .25s; pointer-events: none; }
+
+  /* barre de séquençage — parcourir le brin + zoomer sur une zone précise (lettres des nucléotides) */
+  #seqbar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 16;
+    width: min(720px, calc(100% - 420px)); padding: 11px 13px 12px; border-radius: 15px;
+    background: rgba(14,22,30,.74); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,.09); box-shadow: 0 16px 44px rgba(0,0,0,.5); }
+  #seqbar .sb-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+  #seqbar .sb-label { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #dbe7ef; letter-spacing: .02em; }
+  #seqbar .sb-kick { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: rgba(159,179,198,.6); }
+  #seqbar .sb-row { display: flex; align-items: center; gap: 12px; }
+  #seqbar .sb-strip { position: relative; flex: 1 1 auto; display: flex; gap: 2px; height: 30px; cursor: grab; touch-action: none; user-select: none; }
+  #seqbar .sb-strip.grabbing { cursor: grabbing; }
+  #seqbar .sb-tile { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: #fff; border-radius: 3px;
+    background: var(--c); text-shadow: 0 1px 2px rgba(0,0,0,.45); }
+  #seqbar .sb-window { position: absolute; top: -3px; bottom: -3px; border: 2px solid #7fe3d2; border-radius: 6px;
+    background: rgba(127,227,210,.14); box-shadow: 0 0 0 1px rgba(0,0,0,.3), 0 0 14px rgba(127,227,210,.25);
+    pointer-events: none; transition: left .09s linear, width .12s ease; }
+  #seqbar .sb-zoom { display: flex; gap: 5px; flex: 0 0 auto; }
+  #seqbar .sb-zoom button { width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+    background: rgba(127,227,210,.10); border: 1px solid rgba(127,227,210,.24); color: #cfeee7;
+    font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: background .15s, border-color .15s; }
+  #seqbar .sb-zoom button:hover { background: rgba(127,227,210,.2); border-color: rgba(127,227,210,.5); }
+  #seqbar .sb-zoom button:active { transform: scale(.94); }
+  .legend .row { display: flex; gap: 12px; align-items: center; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: rgba(255,255,255,.78); }
+  .legend .chip { display:inline-flex; align-items:center; gap:5px; }
+  .legend .dot { width:11px; height:11px; border-radius:50%; }
+  .legend .b { width:15px; height:15px; border-radius:4px; color:#fff; font-size:9px; display:flex; align-items:center; justify-content:center; font-weight:600; }
+  .legend .sep { width:1px; height:18px; background:rgba(255,255,255,.14); }
+
+  .panel { position: absolute; top: 18px; right: 18px; width: 286px; background: rgba(16,20,26,.74); backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,.08); border-radius: 15px; padding: 17px 17px 19px; color: #fff; box-shadow: 0 22px 60px rgba(0,0,0,.55); }
+  .panel .label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .22em; color: rgba(255,255,255,.4); margin-bottom: 15px; }
+  .panel .divider { height: 1px; background: rgba(255,255,255,.08); margin: 0 -17px 16px; }
+  .panel .group { margin-bottom: 17px; }
+  .panel .grow-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .panel .gtitle { font-size: 12.5px; color: rgba(255,255,255,.88); }
+  .panel .gval { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: rgba(255,255,255,.45); }
+  .panel .gnote { font-family: 'IBM Plex Mono', monospace; font-size: 10px; line-height: 1.5; color: rgba(255,255,255,.34); margin-bottom: 10px; }
+  .seg-row { display: flex; gap: 6px; }
+  .seg { flex:1; padding:8px 0; font-size:11.5px; font-family:inherit; border-radius:8px; cursor:pointer;
+    transition:background .15s, color .15s; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:rgba(255,255,255,.62); }
+  .seg.active { border-color:rgba(255,255,255,0); background:rgba(255,255,255,.92); color:#11151a; font-weight:500; }
+  .panel input[type=range] { width: 100%; height: 14px; }
+  .seq-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .seq-btn { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .08em; color: rgba(255,255,255,.6);
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.13); border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+  .seq-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
+  #seq { width: 100%; font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: .14em; color: #fff;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.13); border-radius: 8px; padding: 9px 11px; outline: none; }
+  #seq:focus { border-color: rgba(255,255,255,.4); }
+  .seq-note { font-family: 'IBM Plex Mono', monospace; font-size: 10px; line-height: 1.5; color: rgba(255,255,255,.34); margin-top: 8px; }
+
+  /* ---- hover tooltip (merged info system) ---- */
+  #tip { position: absolute; z-index: 40; max-width: 240px; padding: 10px 12px; border-radius: 12px; pointer-events: none;
+    background: linear-gradient(160deg, rgba(20,30,41,.95), rgba(10,16,23,.92)); border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(16px); box-shadow: 0 14px 36px rgba(0,0,0,.5); opacity: 0; transition: opacity .12s; display: none; }
+  #tip .th { display: flex; align-items: center; gap: 8px; }
+  #tip .chip { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #06090d; }
+  #tip .name { font-size: 13px; font-weight: 700; color:#fff; }
+  #tip .sub { font-size: 11px; color: rgba(159,176,189,.95); margin-top: 4px; line-height: 1.5; }
+
+  /* ---- click detail card ---- */
+  #detail { position: absolute; left: 20px; top: 78px; z-index: 30; width: 264px; border-radius: 18px; overflow: hidden;
+    background: linear-gradient(165deg, rgba(20,30,41,.94), rgba(10,16,23,.9)); border: 1px solid rgba(255,255,255,.13);
+    backdrop-filter: blur(22px); box-shadow: 0 24px 60px rgba(0,0,0,.55); color:#fff; display: none; }
+  #detail .dh { position: relative; padding: 17px 17px 14px; }
+  #detail .close { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: #cdd8e0; cursor: pointer; font-size: 13px; line-height: 1; }
+  #detail .dhead { display: flex; align-items: center; gap: 13px; }
+  #detail .bigchip { width: 48px; height: 48px; border-radius: 13px; display: grid; place-items: center; font-size: 24px; font-weight: 700; color: #06090d; }
+  #detail .dname { font-size: 19px; font-weight: 700; line-height: 1; }
+  #detail .dmeta { font-size: 11.5px; color: rgba(159,176,189,.95); margin-top: 3px; }
+  #detail .dbody { padding: 4px 17px 17px; }
+  #detail .drow { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  #detail .drow .k { font-size: 11.5px; color: rgba(138,160,173,.95); }
+  #detail .drow .v { font-size: 12px; font-weight: 500; color: #dbe6ee; text-align: right; }
+  #detail .pair { margin-top: 13px; padding: 12px; border-radius: 13px; background: rgba(127,227,210,.07); border: 1px solid rgba(127,227,210,.16); }
+  #detail .pair .pl { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; color: #7fe3d2; font-weight: 600; margin-bottom: 8px; }
+  #detail .pair .pv { display: flex; align-items: center; justify-content: center; gap: 6px; }
+  #detail .pair .pc { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 16px; font-weight: 700; color: #06090d; }
+  #detail .pair .bonds { display: flex; flex-direction: column; gap: 3px; align-items: center; padding: 0 4px; }
+  #detail .pair .bond { width: 22px; height: 2px; border-radius: 2px; background: #9fdcff; }
+  #detail .pair .pt { text-align: center; font-size: 11px; color: rgba(159,176,189,.95); margin-top: 8px; }
+
+  /* when a detail card is open, fade left-side furniture to avoid overlap */
+  #stage.detail-open .scale-rail, #stage.detail-open .title-block { opacity: 0; }
+
+  /* accessibilité : respecte « réduire les animations » (la rotation auto est déjà à 0 par défaut) */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="mount"></div>
+
+  <div class="overlay" id="loading"><div class="spinner"></div>CHARGEMENT DU MODÈLE</div>
+  <div class="overlay" id="loadError" style="display:none; text-align:center; padding:28px; line-height:1.7;">
+    Impossible de charger le moteur 3D.<br>Vérifiez la connexion, puis rechargez la page.</div>
+
+  <div class="title-block">
+    <div class="t" id="scaleTitle">ADN · DOUBLE HÉLICE</div>
+    <div class="s" id="scaleSub">vue d'ensemble · ADN-B</div>
+  </div>
+
+  <a href="./index.html" class="backlink" title="Retour à la plongée du chromosome à l'ADN"><span class="bico" aria-hidden="true">←</span>plongée cellule → ADN</a>
+
+  <div class="scale-rail">
+    <div class="bar"><div class="marker" id="marker"></div></div>
+    <div class="ticks">
+      <div>10⁻⁸ m · DOUBLE HÉLICE</div>
+      <div>10⁻⁹ m · NUCLÉOTIDE</div>
+      <div>10⁻¹⁰ m · ATOMES</div>
+    </div>
+  </div>
+
+  <div class="hint">glisser pour pivoter · molette pour zoomer dans la matière · survoler une base ou un atome</div>
+
+  <div class="legend" id="legend">
+    <div class="row">
+      <span class="chip"><span class="dot" style="background:#f0901f;box-shadow:0 0 6px rgba(240,144,31,.5);"></span>P&nbsp;phosphore</span>
+      <span class="chip"><span class="dot" style="background:#e0322a;"></span>O&nbsp;oxygène</span>
+      <span class="chip"><span class="dot" style="background:#2b5bd7;"></span>N&nbsp;azote</span>
+      <span class="chip"><span class="dot" style="background:#3a3f47;border:1px solid rgba(255,255,255,.25);"></span>C&nbsp;carbone</span>
+    </div>
+    <div class="sep"></div>
+    <div class="row">
+      <span class="b" style="background:#2f9e44;">A</span>
+      <span class="b" style="background:#c92a2a;">T</span>
+      <span class="b" style="background:#1c7ed6;">C</span>
+      <span class="b" style="background:#343a40;">G</span>
+      <span style="color:rgba(255,255,255,.4);">bases azotées</span>
+    </div>
+  </div>
+
+  <!-- hover tooltip -->
+  <div id="tip">
+    <div class="th"><span class="chip" id="tipChip"></span><span class="name" id="tipName"></span></div>
+    <div class="sub" id="tipSub"></div>
+  </div>
+
+  <!-- click detail card -->
+  <div id="detail">
+    <div class="dh">
+      <button class="close" id="detailClose">✕</button>
+      <div class="dhead">
+        <div class="bigchip" id="dChip"></div>
+        <div><div class="dname" id="dName"></div><div class="dmeta" id="dMeta"></div></div>
+      </div>
+    </div>
+    <div class="dbody">
+      <div id="dRows"></div>
+      <div class="pair">
+        <div class="pl">Appariement</div>
+        <div class="pv">
+          <span class="pc" id="dPairA"></span>
+          <span class="bonds" id="dBonds"></span>
+          <span class="pc" id="dPairB"></span>
+        </div>
+        <div class="pt" id="dPairText"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- barre de séquençage : parcourir le brin + zoomer sur une zone précise -->
+  <div id="seqbar">
+    <div class="sb-head">
+      <span class="sb-label" id="sbLabel">Nucléotide 1 sur 1</span>
+      <span class="sb-kick">Parcourir le brin</span>
+    </div>
+    <div class="sb-row">
+      <div class="sb-strip" id="sbStrip"><div class="sb-window" id="sbWindow"></div></div>
+      <div class="sb-zoom">
+        <button type="button" id="sbZoomIn" title="Zoomer sur la zone" aria-label="Zoomer">+</button>
+        <button type="button" id="sbZoomOut" title="Dézoomer" aria-label="Dézoomer">−</button>
+        <button type="button" id="sbFit" title="Voir tout le brin" aria-label="Voir tout le brin">⤢</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- control panel -->
+  <div class="panel">
+    <div class="label">ÉCHELLE</div>
+    <div class="seg-row" style="margin-bottom:18px;">
+      <button class="seg active" id="viewHelix">Hélice</button>
+      <button class="seg" id="viewNuc">Nucléotide</button>
+      <button class="seg" id="viewAtom">Atomes</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="group">
+      <div class="grow-head"><span class="gtitle">Rotation automatique</span><span class="gval" id="speedLabel">arrêt</span></div>
+      <input type="range" min="0" max="100" step="1" value="0" id="speed" />
+    </div>
+
+    <div class="group">
+      <div class="grow-head"><span class="gtitle">Écartement des molécules</span><span class="gval" id="explodeLabel">compact</span></div>
+      <div class="gnote">étire l'hélice pour révéler les brins, les liaisons et les formes</div>
+      <input type="range" min="0" max="100" step="1" value="0" id="explode" />
+    </div>
+
+    <div class="group">
+      <div class="gtitle" style="margin-bottom:10px;">Arrière-plan</div>
+      <div class="seg-row">
+        <button class="seg active" id="bgSombre">Sombre</button>
+        <button class="seg" id="bgBleu">Bleu</button>
+        <button class="seg" id="bgClair">Studio</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="seq-row">
+        <span class="gtitle">Séquence (brin 5'→3')</span>
+        <button class="seq-btn" id="randomize">aléatoire</button>
+      </div>
+      <input id="seq" value="GCTAGCATCGGATTACCGTAGCTAGGCATCGA" spellcheck="false" autocapitalize="characters" />
+      <div class="seq-note">A · T · G · C — le brin complémentaire est calculé automatiquement</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+class DNAViz {
+  constructor(mount) {
+    this.mount = mount;
+    this.THREE = THREE;
+    // Geometry constants (B-DNA-ish)
+    this.RISE_BASE = 0.46;
+    this.RISE = this.RISE_BASE;
+    this.EXPLODE_MAX = 2.6;
+    this.TWIST = 0.595;
+    this.R_BASE = 2.4;
+    this.R = this.R_BASE;
+    this.PHI = 2.42;
+    this.capR = 0.165;
+    this.COMP = { A: 'T', T: 'A', G: 'C', C: 'G' };
+    this.PURINE = { A: true, G: true };
+    this.HAND = -1;
+    this.IN = 0.74;
+    this.BG = {
+      sombre: 'radial-gradient(125% 105% at 50% 0%, #141b22 0%, #0a0e13 55%, #05080b 100%)',
+      bleu:   'radial-gradient(125% 110% at 50% 0%, #123048 0%, #0a1c2e 55%, #050d16 100%)',
+      clair:  'radial-gradient(120% 105% at 50% 16%, #f5f8fa 0%, #dde7ed 58%, #c2d0da 100%)'
+    };
+    this.LOD_FAR = 15;
+    this.LOD_NEAR = 10;
+    this.D_HALF = 2;
+    this.CPK = { C: 0x3a3f47, N: 0x2b5bd7, O: 0xe0322a, P: 0xf0901f, H: 0xe8edf2 };
+    this.ATR = { C: 0.17, N: 0.17, O: 0.155, P: 0.235, H: 0.105 };
+    this.LBLCOL = { A: '#2f9e44', T: '#c92a2a', C: '#1c7ed6', G: '#343a40' };
+    // info-system tables (merged from the card)
+    this.BASE_NAME = { A: 'Adénine', T: 'Thymine', C: 'Cytosine', G: 'Guanine' };
+    this.BASE_TYPE = { A: 'Purine', G: 'Purine', T: 'Pyrimidine', C: 'Pyrimidine' };
+    this.UICOL = { A: '#2f9e44', T: '#e0584f', C: '#1c7ed6', G: '#6b7280' };
+    this.CODON_AA = {TTT:'Phe',TTC:'Phe',TTA:'Leu',TTG:'Leu',CTT:'Leu',CTC:'Leu',CTA:'Leu',CTG:'Leu',ATT:'Ile',ATC:'Ile',ATA:'Ile',ATG:'Met',GTT:'Val',GTC:'Val',GTA:'Val',GTG:'Val',TCT:'Ser',TCC:'Ser',TCA:'Ser',TCG:'Ser',CCT:'Pro',CCC:'Pro',CCA:'Pro',CCG:'Pro',ACT:'Thr',ACC:'Thr',ACA:'Thr',ACG:'Thr',GCT:'Ala',GCC:'Ala',GCA:'Ala',GCG:'Ala',TAT:'Tyr',TAC:'Tyr',TAA:'Stop',TAG:'Stop',CAT:'His',CAC:'His',CAA:'Gln',CAG:'Gln',AAT:'Asn',AAC:'Asn',AAA:'Lys',AAG:'Lys',GAT:'Asp',GAC:'Asp',GAA:'Glu',GAG:'Glu',TGT:'Cys',TGC:'Cys',TGA:'Stop',TGG:'Trp',CGT:'Arg',CGC:'Arg',CGA:'Arg',CGG:'Arg',AGT:'Ser',AGC:'Ser',AGA:'Arg',AGG:'Arg',GGT:'Gly',GGC:'Gly',GGA:'Gly',GGG:'Gly'};
+    // atom-level info tables (hover/click reaches the atoms too)
+    this.ELEM_NAME = { C: 'Carbone', N: 'Azote', O: 'Oxygène', P: 'Phosphore', H: 'Hydrogène' };
+    this.ROLE_LABEL = { phosphate: 'Groupe phosphate', sucre: 'Sucre · désoxyribose', base: 'Base azotée' };
+    this.CPK_CSS = { C: '#3a3f47', N: '#2b5bd7', O: '#e0322a', P: '#f0901f', H: '#e8edf2' };
+
+    const DEFAULT = 'GCTAGCATCGGATTACCGTAGCTAGGCATCGA';
+    this.state = { bg: 'sombre', view: 'helix', speed: 0, explode: 0, sequence: DEFAULT };
+    this.speedRad = 0;
+    this.dist = 21;
+    this.targetDist = 21;
+    this.panFrac = 0.5;   // position le long du brin (0 = bas, 1 = haut) — pilotée par la barre de séquençage
+    this.panY = 0;
+    this.tweening = false;
+    this.dragging = false;
+    this.intro = 0;
+    this._phase = '';
+    this.spriteTex = [];
+    this.pickables = [];
+    this.atomPickables = [];
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2();
+    this._lastHover = 0;
+  }
+
+  async init() {
+    const THREE = this.THREE;
+    this.UP = new THREE.Vector3(0, 1, 0);
+    const el = this.mount;
+    const w = el.clientWidth || window.innerWidth;
+    const h = el.clientHeight || window.innerHeight;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(w, h);
+    renderer.setClearColor(0x000000, 0);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.02;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.touchAction = 'none';
+    el.appendChild(renderer.domElement);
+    this.renderer = renderer;
+
+    const scene = new THREE.Scene();
+    this.scene = scene;
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromEquirectangular(this.makeEnvTexture()).texture;
+
+    const camera = new THREE.PerspectiveCamera(36, w / h, 0.1, 200);
+    camera.position.set(0, 0, this.dist);
+    camera.lookAt(0, 0, 0);
+    this.camera = camera;
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.7); key.position.set(5, 9, 8);
+    const fill = new THREE.DirectionalLight(0xbcd4ff, 0.5); fill.position.set(-8, -3, 5);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.9); rim.position.set(-4, 5, -9);
+    scene.add(key, fill, rim);
+
+    const phys = (hex) => new THREE.MeshPhysicalMaterial({ color: hex, roughness: 0.36, metalness: 0.0, clearcoat: 0.55, clearcoatRoughness: 0.14, envMapIntensity: 0.78, transparent: true });
+    this.baseMat = { A: phys(0x2f9e44), T: phys(0xc92a2a), G: phys(0x6b7280), C: phys(0x1c7ed6) };
+    this.backboneMat = new THREE.MeshPhysicalMaterial({ color: 0x8ab6d6, roughness: 0.34, metalness: 0.0, clearcoat: 0.6, clearcoatRoughness: 0.2, envMapIntensity: 0.85, transparent: true });
+    this.abstractMats = [this.backboneMat, this.baseMat.A, this.baseMat.T, this.baseMat.G, this.baseMat.C];
+
+    const atomMat = (hex) => new THREE.MeshPhysicalMaterial({ color: hex, roughness: 0.32, metalness: 0.0, clearcoat: 0.5, clearcoatRoughness: 0.16, envMapIntensity: 0.85, transparent: true });
+    this.atomMat = { C: atomMat(this.CPK.C), N: atomMat(this.CPK.N), O: atomMat(this.CPK.O), P: atomMat(this.CPK.P), H: atomMat(this.CPK.H) };
+    this.bondMat = new THREE.MeshPhysicalMaterial({ color: 0xc2cad2, roughness: 0.5, metalness: 0.0, clearcoat: 0.3, envMapIntensity: 0.7, transparent: true });
+    this.detailBackMat = new THREE.MeshPhysicalMaterial({ color: 0x9fb6c6, roughness: 0.4, metalness: 0.0, clearcoat: 0.4, envMapIntensity: 0.7, transparent: true });
+    this.hdotMat = new THREE.MeshStandardMaterial({ color: 0xeef3f8, emissive: 0x6f8aa6, emissiveIntensity: 0.4, roughness: 0.6, transparent: true });
+    this.detailMats = [this.atomMat.C, this.atomMat.N, this.atomMat.O, this.atomMat.P, this.atomMat.H, this.bondMat, this.detailBackMat, this.hdotMat];
+
+    this.sphGeo = new THREE.SphereGeometry(1, 16, 12);
+    this.cylGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
+    this.rebuildCapGeo();
+
+    this.pivot = new THREE.Group();
+    scene.add(this.pivot);
+
+    this.buildAll(this.state.sequence);
+    this.applyBg(this.state.bg);
+    this.addListeners();
+    this.intro = performance.now();
+    this.lastT = performance.now();
+    this._raf = requestAnimationFrame(this.animate);
+  }
+
+  makeEnvTexture() {
+    const THREE = this.THREE;
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, '#eef0f2'); g.addColorStop(0.42, '#c4d2de'); g.addColorStop(0.5, '#dde6ee');
+    g.addColorStop(0.58, '#8ea2b3'); g.addColorStop(1.0, '#222d36');
+    x.fillStyle = g; x.fillRect(0, 0, 512, 256);
+    const rg = x.createRadialGradient(360, 60, 8, 360, 60, 150);
+    rg.addColorStop(0, 'rgba(255,255,255,.6)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = rg; x.fillRect(0, 0, 512, 256);
+    const t = new THREE.CanvasTexture(c);
+    t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  back(angle, y) { return new this.THREE.Vector3(this.R * Math.cos(angle), y, this.HAND * this.R * Math.sin(angle)); }
+
+  makeStrand(phase, mat, radius, i0, i1) {
+    const THREE = this.THREE;
+    const N = this.N, sub = 12, pts = [];
+    const a0 = (i0 == null ? 0 : i0), a1 = (i1 == null ? N - 1 : i1);
+    for (let i = a0 * sub; i <= a1 * sub; i++) {
+      const t = i / sub;
+      const a = t * this.TWIST + phase;
+      const y = t * this.RISE - this.H / 2;
+      pts.push(new THREE.Vector3(this.R * Math.cos(a), y, this.HAND * this.R * Math.sin(a)));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+    const geo = new THREE.TubeGeometry(curve, Math.max(8, pts.length), radius, 20, false);
+    return new THREE.Mesh(geo, mat);
+  }
+
+  addHalf(p, q, mat, group, userData) {
+    const THREE = this.THREE;
+    const m = new THREE.Mesh(this.capGeo, mat);
+    const dir = new THREE.Vector3().subVectors(q, p);
+    const len = dir.length(); dir.normalize();
+    m.position.copy(p).addScaledVector(dir, len / 2);
+    m.quaternion.setFromUnitVectors(this.UP, dir);
+    if (userData) { m.userData = userData; this.pickables.push(m); }
+    group.add(m);
+  }
+
+  buildAbstract(seq) {
+    const THREE = this.THREE;
+    const N = seq.length;
+    const g = new THREE.Group();
+    this.pickables = [];
+    if (N >= 2) {
+      g.add(this.makeStrand(0, this.backboneMat, 0.185));
+      g.add(this.makeStrand(this.PHI, this.backboneMat, 0.185));
+    }
+    for (let i = 0; i < N; i++) {
+      const a = i * this.TWIST;
+      const y = i * this.RISE - this.H / 2;
+      const A = this.back(a, y);
+      const B = this.back(a + this.PHI, y);
+      const mid = new THREE.Vector3().addVectors(A, B).multiplyScalar(0.5);
+      const base = seq[i];
+      const comp = this.COMP[base];
+      if (this.baseMat[base]) this.addHalf(A, mid, this.baseMat[base], g, { i, strand: 0, char: base });
+      if (this.baseMat[comp]) this.addHalf(mid, B, this.baseMat[comp], g, { i, strand: 1, char: comp });
+    }
+    return g;
+  }
+
+  baseSpec(type) {
+    const pur = this.PURINE[type];
+    if (pur) {
+      const atoms = [
+        ['N', 1.20, 0.30], ['C', 1.35, 0.85], ['N', 1.90, 0.90], ['C', 2.05, 0.40],
+        ['C', 1.65, 0.05], ['N', 1.85, -0.45], ['C', 2.35, -0.55], ['N', 2.65, -0.10],
+        ['C', 2.50, 0.45]
+      ];
+      const bonds = [[4,5],[5,6],[6,7],[7,8],[8,3],[3,4],[4,0],[0,1],[1,2],[2,3]];
+      atoms.push([type === 'G' ? 'O' : 'N', 2.82, 0.92]); bonds.push([8,9]);
+      let anchors;
+      if (type === 'G') { atoms.push(['N', 2.55, -1.05]); bonds.push([6,10]); anchors = [[2.95,0.85],[2.80,0.05],[2.65,-0.70]]; }
+      else { anchors = [[2.88,0.78],[2.78,0.05]]; }
+      return { atoms, bonds, attach: 0, anchors, center: [2.0, 0.05] };
+    } else {
+      const atoms = [
+        ['N', 1.10, 0.00], ['C', 1.30, -0.45], ['C', 1.80, -0.50], ['C', 2.15, -0.10],
+        ['N', 1.95, 0.40], ['C', 1.45, 0.45], ['O', 1.30, 0.95]
+      ];
+      const bonds = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,0],[5,6]];
+      atoms.push([type === 'C' ? 'N' : 'O', 2.60, 0.15]); bonds.push([3,7]);
+      let anchors;
+      if (type === 'C') { atoms.push(['H', 2.30, -0.90]); anchors = [[2.55,0.20],[2.35,-0.10],[2.18,0.50]]; }
+      else { atoms.push(['C', 2.05, -1.00]); bonds.push([2,8]); anchors = [[2.50,-0.05],[2.28,0.45]]; }
+      return { atoms, bonds, attach: 0, anchors, center: [1.7, 0.0] };
+    }
+  }
+
+  nucleotide(Pb, partner, baseChar, y, acc, ctx) {
+    const THREE = this.THREE;
+    const ein = new THREE.Vector3().subVectors(partner, Pb).normalize();
+    const esd = new THREE.Vector3().crossVectors(this.UP, ein).normalize();
+    const W = (a, b, c) => new THREE.Vector3(
+      Pb.x + ein.x * a + esd.x * c, Pb.y + b, Pb.z + ein.z * a + esd.z * c
+    );
+    let role = 'phosphate';
+    const atom = (el, p) => {
+      acc.atoms[el].push(p);
+      if (acc.meta) acc.meta[el].push({ el, role, base: baseChar, strand: ctx ? ctx.strand : 0, i: ctx ? ctx.i : 0 });
+    };
+    const bond = (p, q) => acc.bonds.push([p, q]);
+
+    role = 'phosphate';
+    const P = W(0, 0, 0); atom('P', P);
+    const o1 = W(-0.16, 0.34, 0.24), o2 = W(-0.16, -0.32, 0.26);
+    atom('O', o1); atom('O', o2); bond(P, o1); bond(P, o2);
+
+    role = 'sucre';
+    const ring = [
+      ['C', 1.04, 0.00], ['O', 0.75, 0.40], ['C', 0.28, 0.25], ['C', 0.28, -0.25], ['C', 0.75, -0.40]
+    ];
+    const rp = ring.map(([el, a, b]) => { const p = W(a, b, 0); atom(el, p); return p; });
+    for (let k = 0; k < 5; k++) bond(rp[k], rp[(k + 1) % 5]);
+    bond(rp[2], P);
+    const o3p = W(0.10, -0.62, 0); atom('O', o3p); bond(rp[3], o3p);
+
+    role = 'base';
+    const spec = this.baseSpec(baseChar);
+    const IN = this.IN;
+    const bp = spec.atoms.map(([el, a, c]) => { const p = W(a * IN, 0, c * IN); atom(el, p); return p; });
+    spec.bonds.forEach(([i, j]) => bond(bp[i], bp[j]));
+    bond(rp[0], bp[spec.attach]);
+
+    const anchors = spec.anchors.map(([a, c]) => W(a * IN, 0, c * IN));
+    const labelPos = W(spec.center[0] * IN, 0.62, spec.center[1] * IN);
+    return {
+      anchors, labelPos, labelChar: baseChar,
+      Ppos: P, sugarPos: W(0.55, 0, 0), basePos: W(spec.center[0] * IN, 0, spec.center[1] * IN)
+    };
+  }
+
+  makeLabel(char) {
+    const THREE = this.THREE;
+    const c = document.createElement('canvas'); c.width = 128; c.height = 88;
+    const x = c.getContext('2d');
+    const col = this.LBLCOL[char] || '#444';
+    const rr = (xx, yy, w, h, r) => { x.beginPath(); x.moveTo(xx + r, yy); x.arcTo(xx + w, yy, xx + w, yy + h, r); x.arcTo(xx + w, yy + h, xx, yy + h, r); x.arcTo(xx, yy + h, xx, yy, r); x.arcTo(xx, yy, xx + w, yy, r); x.closePath(); };
+    x.fillStyle = col; rr(8, 8, 112, 72, 18); x.fill();
+    x.lineWidth = 6; x.strokeStyle = 'rgba(255,255,255,.92)'; x.stroke();
+    x.fillStyle = '#fff'; x.font = 'bold 58px "IBM Plex Sans", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(char, 64, 47);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    this.spriteTex.push(tex);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 });
+    const s = new THREE.Sprite(mat); s.scale.set(0.7, 0.48, 1);
+    return { sprite: s, mat };
+  }
+
+  makeAnnot(text) {
+    const THREE = this.THREE;
+    const font = '500 30px "IBM Plex Mono", monospace';
+    const meas = document.createElement('canvas').getContext('2d'); meas.font = font;
+    const w = Math.ceil(meas.measureText(text).width) + 40, h = 56;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d');
+    const rr = (xx, yy, ww, hh, r) => { x.beginPath(); x.moveTo(xx + r, yy); x.arcTo(xx + ww, yy, xx + ww, yy + hh, r); x.arcTo(xx + ww, yy + hh, xx, yy + hh, r); x.arcTo(xx, yy + hh, xx, yy, r); x.arcTo(xx, yy, xx + ww, yy, r); x.closePath(); };
+    x.fillStyle = 'rgba(12,16,21,.9)'; rr(2, 2, w - 4, h - 4, 13); x.fill();
+    x.lineWidth = 2.5; x.strokeStyle = 'rgba(255,255,255,.32)'; x.stroke();
+    x.font = font; x.fillStyle = '#eef3f8'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(text, w / 2, h / 2 + 1);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    this.spriteTex.push(tex);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, opacity: 0 });
+    const s = new THREE.Sprite(mat); s.scale.set(w / 200, h / 200, 1);
+    return { sprite: s, mat };
+  }
+
+  addAnnotations(n, g) {
+    const THREE = this.THREE;
+    const up = this.UP;
+    const radial = (p) => { const v = new THREE.Vector3(p.x, 0, p.z); return v.lengthSq() < 1e-4 ? up.clone() : v.normalize(); };
+    this.addAnnot('groupe phosphate', n.Ppos, radial(n.Ppos).multiplyScalar(1.0).add(up.clone().multiplyScalar(1.5)), g);
+    this.addAnnot('sucre · désoxyribose', n.sugarPos, radial(n.sugarPos).multiplyScalar(2.3).add(up.clone().multiplyScalar(-0.4)), g);
+    this.addAnnot('base azotée', n.basePos, up.clone().multiplyScalar(2.1).add(radial(n.basePos).multiplyScalar(0.6)), g);
+  }
+
+  addAnnot(text, part, offset, g) {
+    const THREE = this.THREE;
+    const labelPos = part.clone().add(offset);
+    const { sprite, mat } = this.makeAnnot(text);
+    sprite.position.copy(labelPos);
+    g.add(sprite); this.annotMats.push(mat);
+    const lgeo = new THREE.BufferGeometry().setFromPoints([part, labelPos]);
+    const lmat = new THREE.LineBasicMaterial({ color: 0xc2ccd6, transparent: true, opacity: 0, depthTest: false });
+    g.add(new THREE.Line(lgeo, lmat)); this.annotMats.push(lmat);
+  }
+
+  buildDetail(seq) {
+    const THREE = this.THREE;
+    const N = seq.length;
+    const g = new THREE.Group();
+    const acc = { atoms: { C: [], N: [], O: [], P: [], H: [] }, meta: { C: [], N: [], O: [], P: [], H: [] }, bonds: [], hdots: [] };
+    this.spriteMats = []; this.annotMats = []; this.atomPickables = [];
+
+    const cen = Math.floor((N - 1) / 2);
+    const w0 = Math.max(0, cen - this.D_HALF), w1 = Math.min(N - 1, cen + this.D_HALF);
+
+    if (w1 > w0) {
+      g.add(this.makeStrand(0, this.detailBackMat, 0.12, w0, w1));
+      g.add(this.makeStrand(this.PHI, this.detailBackMat, 0.12, w0, w1));
+    }
+
+    for (let i = w0; i <= w1; i++) {
+      const a = i * this.TWIST;
+      const y = i * this.RISE - this.H / 2;
+      const A = this.back(a, y);
+      const B = this.back(a + this.PHI, y);
+      const b1 = seq[i], b2 = this.COMP[b1];
+      const n1 = this.nucleotide(A, B, b1, y, acc, { i, strand: 0 });
+      const n2 = this.nucleotide(B, A, b2, y, acc, { i, strand: 1 });
+      const n = Math.min(n1.anchors.length, n2.anchors.length);
+      for (let k = 0; k < n; k++) this.addHBond(n1.anchors[k], n2.anchors[k], acc);
+      [n1, n2].forEach(nuc => {
+        const { sprite, mat } = this.makeLabel(nuc.labelChar);
+        sprite.position.copy(nuc.labelPos);
+        g.add(sprite); this.spriteMats.push(mat);
+      });
+      if (i === cen) this.addAnnotations(n1, g);
+    }
+
+    const dummy = new THREE.Object3D();
+    for (const el of ['C', 'N', 'O', 'P', 'H']) {
+      const list = acc.atoms[el];
+      if (!list.length) continue;
+      const im = new THREE.InstancedMesh(this.sphGeo, this.atomMat[el], list.length);
+      const r = this.ATR[el];
+      list.forEach((p, idx) => { dummy.position.copy(p); dummy.scale.set(r, r, r); dummy.rotation.set(0, 0, 0); dummy.updateMatrix(); im.setMatrixAt(idx, dummy.matrix); });
+      im.instanceMatrix.needsUpdate = true; im.frustumCulled = false;
+      im.userData = { kind: 'atom', el, meta: acc.meta[el] };
+      this.atomPickables.push(im);
+      g.add(im);
+    }
+    if (acc.bonds.length) {
+      const im = new THREE.InstancedMesh(this.cylGeo, this.bondMat, acc.bonds.length);
+      const br = 0.052;
+      acc.bonds.forEach(([p, q], idx) => {
+        const dir = new THREE.Vector3().subVectors(q, p); const len = dir.length(); dir.normalize();
+        dummy.position.copy(p).addScaledVector(dir, len / 2);
+        dummy.quaternion.setFromUnitVectors(this.UP, dir);
+        dummy.scale.set(br, len, br); dummy.updateMatrix();
+        im.setMatrixAt(idx, dummy.matrix);
+      });
+      im.instanceMatrix.needsUpdate = true; im.frustumCulled = false; g.add(im);
+    }
+    if (acc.hdots.length) {
+      const im = new THREE.InstancedMesh(this.sphGeo, this.hdotMat, acc.hdots.length);
+      acc.hdots.forEach((p, idx) => { dummy.position.copy(p); dummy.scale.set(0.045, 0.045, 0.045); dummy.rotation.set(0, 0, 0); dummy.updateMatrix(); im.setMatrixAt(idx, dummy.matrix); });
+      im.instanceMatrix.needsUpdate = true; im.frustumCulled = false; g.add(im);
+    }
+    return g;
+  }
+
+  addHBond(p, q, acc) {
+    const THREE = this.THREE;
+    const dir = new THREE.Vector3().subVectors(q, p); const len = dir.length();
+    const n = Math.max(2, Math.round(len / 0.17));
+    for (let k = 1; k < n; k++) acc.hdots.push(new THREE.Vector3().copy(p).addScaledVector(dir, k / n));
+  }
+
+  rebuildCapGeo() {
+    const chord = 2 * this.R * Math.sin(this.PHI / 2);
+    this.halfLen = chord / 2;
+    if (this.capGeo) this.capGeo.dispose();
+    this.capGeo = new this.THREE.CapsuleGeometry(this.capR, Math.max(0.05, this.halfLen - 2 * this.capR), 8, 20);
+  }
+
+  buildAll(seq) {
+    const N = seq.length;
+    this.N = N;
+    this.H = Math.max(0.001, (N - 1) * this.RISE);
+    if (this.abstractGroup) { this.pivot.remove(this.abstractGroup); this.disposeGroup(this.abstractGroup); }
+    if (this.detailGroup) { this.pivot.remove(this.detailGroup); this.disposeGroup(this.detailGroup); }
+    this.rebuildCapGeo();
+    this.spriteTex.forEach(t => t.dispose()); this.spriteTex = [];
+    this.abstractGroup = this.buildAbstract(seq);
+    this.detailGroup = this.buildDetail(seq);
+    this.detailGroup.visible = false;
+    this.pivot.add(this.abstractGroup, this.detailGroup);
+    this.fitCamera();
+  }
+
+  disposeGroup(g) {
+    g.traverse(o => {
+      if (o.geometry && o.geometry !== this.capGeo && o.geometry !== this.sphGeo && o.geometry !== this.cylGeo) o.geometry.dispose();
+    });
+  }
+
+  fitCamera() {
+    const fov = this.camera.fov * Math.PI / 180;
+    const need = Math.max(this.H * 0.62, this.R * 2.4) / Math.tan(fov / 2);
+    this.helixDist = Math.max(11, Math.min(48, need));
+    if (this.state.view === 'helix') { this.dist = this.helixDist; this.targetDist = this.helixDist; this.camera.position.z = this.dist; }
+  }
+
+  addListeners() {
+    const el = this.renderer.domElement;
+    el.addEventListener('pointerdown', this.onDown);
+    window.addEventListener('pointermove', this.onMove);
+    window.addEventListener('pointerup', this.onUp);
+    el.addEventListener('wheel', this.onWheel, { passive: false });
+    this.ro = new ResizeObserver(() => this.onResize());
+    this.ro.observe(this.mount);
+  }
+
+  onDown = (e) => {
+    this.dragging = true; this.intro = 0;
+    this.px = e.clientX; this.py = e.clientY;
+    this._downX = e.clientX; this._downY = e.clientY; this._moved = 0;
+    this.mount.classList.add('grabbing');
+    if (this.hideTip) this.hideTip();
+    try { this.renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+  };
+  onMove = (e) => {
+    if (this.dragging && this.pivot) {
+      const dx = e.clientX - this.px, dy = e.clientY - this.py;
+      this.px = e.clientX; this.py = e.clientY;
+      this._moved += Math.abs(dx) + Math.abs(dy);
+      this.pivot.rotation.y += dx * 0.01;
+      this.pivot.rotation.x = Math.max(-0.8, Math.min(0.8, this.pivot.rotation.x + dy * 0.008));
+      return;
+    }
+    // hover info (merged system) — only when not dragging
+    const now = performance.now();
+    if (now - this._lastHover < 45) return;
+    this._lastHover = now;
+    this.hoverPick(e);
+  };
+  onUp = (e) => {
+    const wasDragging = this.dragging;
+    this.dragging = false;
+    this.mount.classList.remove('grabbing');
+    if (wasDragging && this._moved < 6) this.clickPick(e); // treat as click, not rotate
+  };
+  onWheel = (e) => {
+    e.preventDefault();
+    this.dist = Math.max(3, Math.min(40, this.dist + e.deltaY * 0.016));
+    this.targetDist = this.dist; this.tweening = false;
+    this.camera.position.z = this.dist;
+    this.hideTip();
+    this.syncViewState();
+  };
+  onResize = () => {
+    const el = this.mount; if (!el || !this.renderer) return;
+    const w = el.clientWidth, h = el.clientHeight;
+    this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  };
+
+  // ---------- picking / info ----------
+  setPointer(e) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    return r;
+  }
+  pickBase() {
+    if (!this.abstractGroup || !this.abstractGroup.visible || this.backboneMat.opacity < 0.3) return null;
+    const visible = this.pickables.filter(m => m.material.opacity > 0.25);
+    const hits = this.raycaster.intersectObjects(visible, false);
+    return hits.length ? Object.assign({ type: 'base' }, hits[0].object.userData) : null;
+  }
+  pickAtom() {
+    if (!this.detailGroup || !this.detailGroup.visible || this.atomMat.C.opacity < 0.3) return null;
+    const hits = this.raycaster.intersectObjects(this.atomPickables, false);
+    if (!hits.length) return null;
+    const meta = hits[0].object.userData.meta[hits[0].instanceId];
+    return meta ? Object.assign({ type: 'atom' }, meta) : null;
+  }
+  pickAny() {
+    if (!this.pointer) return null;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    // once zoomed into the matter, the atoms take priority over the abstract bases
+    return this.pickAtom() || this.pickBase();
+  }
+  hoverPick(e) {
+    const r = this.setPointer(e);
+    const info = this.pickAny();
+    if (!info) { this.hideTip(); return; }
+    this.showTip(info, e.clientX - r.left, e.clientY - r.top);
+  }
+  clickPick(e) {
+    this.setPointer(e);
+    const info = this.pickAny();
+    if (info) this.showDetail(info);
+  }
+
+  hideTip() { if (this._tip) { this._tip.el.style.opacity = '0'; this._tip.el.style.display = 'none'; } }
+  showTip(info, x, y) {
+    if (!this._tip) return;
+    const t = this._tip;
+    let chipText, chipBg, chipColor, name, line1, line2;
+    if (info.type === 'atom') {
+      chipText = info.el; chipBg = this.CPK_CSS[info.el]; chipColor = info.el === 'H' ? '#06090d' : '#fff';
+      name = this.ELEM_NAME[info.el] || info.el;
+      line1 = this.ROLE_LABEL[info.role] || '';
+      line2 = 'Nucléotide ' + info.base + ' · brin ' + (info.strand === 0 ? 'sens' : 'complémentaire') + ' · n°' + (info.i + 1);
+    } else {
+      const char = info.char, pair = this.COMP[char];
+      const nH = (char === 'G' || char === 'C') ? 3 : 2;
+      chipText = char; chipBg = this.UICOL[char]; chipColor = '#06090d';
+      name = this.BASE_NAME[char];
+      line1 = (info.strand === 0 ? 'Brin sens (5′→3′)' : 'Brin complémentaire (3′→5′)') + ' · n°' + (info.i + 1);
+      line2 = 'Apparié à ' + pair + ' (' + this.BASE_NAME[pair] + ') — ' + nH + ' liaisons H';
+    }
+    t.chip.textContent = chipText; t.chip.style.background = chipBg; t.chip.style.color = chipColor;
+    t.name.textContent = name;
+    t.sub.innerHTML = line1 + '<br>' + line2;
+    t.el.style.display = 'block';
+    // keep tooltip on-screen
+    const stage = this.mount.parentElement.getBoundingClientRect();
+    let left = x + 16, top = y + 14;
+    if (left + 250 > stage.width) left = x - 250;
+    t.el.style.left = left + 'px'; t.el.style.top = top + 'px';
+    requestAnimationFrame(() => { t.el.style.opacity = '1'; });
+  }
+
+  showDetail(info) {
+    if (!this._detail) return;
+    const d = this._detail;
+    const pairBlock = d.el.querySelector('.pair');
+
+    if (info.type === 'atom') {
+      const el = info.el;
+      d.chip.textContent = el; d.chip.style.background = this.CPK_CSS[el]; d.chip.style.color = el === 'H' ? '#06090d' : '#fff';
+      d.name.textContent = this.ELEM_NAME[el] || el;
+      d.meta.textContent = (this.ROLE_LABEL[info.role] || '') + ' · nucléotide ' + info.base;
+      const rows = [
+        ['Élément', (this.ELEM_NAME[el] || el) + ' (' + el + ')'],
+        ['Partie du nucléotide', this.ROLE_LABEL[info.role] || '—'],
+        ['Base portée', info.base + ' · ' + this.BASE_NAME[info.base]],
+        ['Brin', info.strand === 0 ? 'Sens (5′→3′)' : 'Complémentaire'],
+        ['Position', (info.i + 1) + ' / ' + this.N],
+      ];
+      d.rows.innerHTML = rows.map(([k, v]) => '<div class="drow"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>').join('');
+      if (pairBlock) pairBlock.style.display = 'none';
+      d.el.style.display = 'block';
+      this.mount.parentElement.classList.add('detail-open');
+      return;
+    }
+
+    if (pairBlock) pairBlock.style.display = '';
+    const { char, strand, i } = info;
+    d.chip.style.color = '#06090d';
+    const name = this.BASE_NAME[char], type = this.BASE_TYPE[char], pair = this.COMP[char];
+    const nH = (char === 'G' || char === 'C') ? 3 : 2;
+    const col = this.UICOL[char], pcol = this.UICOL[pair];
+
+    d.chip.textContent = char; d.chip.style.background = col;
+    d.name.textContent = name;
+    d.meta.textContent = type + ' · position ' + (i + 1) + ' / ' + this.N;
+
+    const rows = [
+      ['Type de base', type],
+      ['Brin', strand === 0 ? 'Sens (5′→3′)' : 'Complémentaire'],
+      ['Squelette', 'Phosphate — désoxyribose'],
+      ['Liaisons H', nH + ' (avec ' + pair + ')'],
+    ];
+    if (strand === 0) {
+      const seq = this.state.sequence;
+      const ci = Math.floor(i / 3) * 3;
+      const cod = seq.slice(ci, ci + 3);
+      if (cod.length === 3) rows.push(['Codon ' + (Math.floor(i / 3) + 1), cod + ' → ' + (this.CODON_AA[cod] || '?')]);
+    }
+    d.rows.innerHTML = rows.map(([k, v]) =>
+      '<div class="drow"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>').join('');
+
+    d.pairA.textContent = char; d.pairA.style.background = col;
+    d.pairB.textContent = pair; d.pairB.style.background = pcol;
+    d.bonds.innerHTML = Array.from({ length: nH }).map(() => '<span class="bond"></span>').join('');
+    d.pairText.textContent = nH + ' liaisons hydrogène' + (nH === 3 ? ' (G≡C)' : ' (A=T)');
+
+    d.el.style.display = 'block';
+    this.mount.parentElement.classList.add('detail-open');
+  }
+  closeDetail() {
+    if (!this._detail) return;
+    this._detail.el.style.display = 'none';
+    this.mount.parentElement.classList.remove('detail-open');
+  }
+
+  // ---------- view / hud ----------
+  tweenTo(d) { this.targetDist = d; this.tweening = true; this.intro = 0; }
+  setView(v) {
+    this.state.view = v;
+    this.hideTip();
+    if (v === 'helix') this.tweenTo(this.helixDist);
+    else if (v === 'nuc') this.tweenTo(8.5);
+    else this.tweenTo(4.2);
+    this.reflectView();
+  }
+  syncViewState() {
+    let v = this.dist > 13 ? 'helix' : (this.dist > 5.5 ? 'nuc' : 'atom');
+    if (v !== this.state.view) { this.state.view = v; this.reflectView(); }
+  }
+
+  updateHud(dist) {
+    const t = Math.max(0, Math.min(1, (this.LOD_FAR - dist) / (this.LOD_FAR - this.LOD_NEAR)));
+    const aOp = 1 - t, dOp = t;
+    this.abstractMats.forEach(m => { m.opacity = aOp; });
+    this.detailMats.forEach(m => { m.opacity = dOp; });
+    if (this.spriteMats) this.spriteMats.forEach(m => { m.opacity = Math.max(0, (t - 0.35) / 0.65); });
+    if (this.annotMats) { const ao = dOp * Math.max(0, Math.min(1, (dist - 3.6) / 2.0)); this.annotMats.forEach(m => { m.opacity = ao; }); }
+    if (this.abstractGroup) this.abstractGroup.visible = aOp > 0.02;
+    if (this.detailGroup) this.detailGroup.visible = dOp > 0.02;
+
+    if (this._marker) {
+      const top = Math.max(0, Math.min(100, (40 - dist) / (40 - 3) * 100));
+      this._marker.style.top = top + '%';
+    }
+    if (this._legend) this._legend.style.opacity = String(Math.max(0, (t - 0.2) / 0.8));
+
+    let phase, title, sub;
+    if (dist > 13) { phase = 'helix'; title = 'ADN · DOUBLE HÉLICE'; sub = "vue d'ensemble · ADN-B"; }
+    else if (dist > 5.5) { phase = 'nuc'; title = 'ADN · NUCLÉOTIDE'; sub = 'phosphate · sucre · base azotée'; }
+    else { phase = 'atom'; title = 'ADN · ÉCHELLE ATOMIQUE'; sub = 'P · O · N · C — liaisons hydrogène'; }
+    if (phase !== this._phase) {
+      this._phase = phase;
+      if (this._title) this._title.textContent = title;
+      if (this._sub) this._sub.textContent = sub;
+    }
+  }
+
+  animate = () => {
+    const now = performance.now();
+    const dt = Math.min((now - this.lastT) / 1000, 0.05);
+    this.lastT = now;
+    if (this.tweening) {
+      this.dist += (this.targetDist - this.dist) * Math.min(1, dt * 6);
+      if (Math.abs(this.targetDist - this.dist) < 0.03) { this.dist = this.targetDist; this.tweening = false; }
+      this.camera.position.z = this.dist;
+    }
+    let auto = this.speedRad;
+    if (this.intro) {
+      const e = (now - this.intro) / 1000;
+      if (e < 2.8) { const k = 1 - e / 2.8; auto += 0.95 * k * k; }
+      else this.intro = 0;
+    }
+    if (!this.dragging && this.pivot) this.pivot.rotation.y += auto * dt;
+    // pan vertical (parcours du brin) + dolly (zoom) : la caméra vise le nucléotide ciblé
+    this.panY = (this.panFrac - 0.5) * this.H;
+    this.camera.position.y = this.panY;
+    this.camera.position.z = this.dist;
+    this.camera.lookAt(0, this.panY, 0);
+    if (this._seqbarSync) this._seqbarSync();
+    this.updateHud(this.dist);
+    this.renderer.render(this.scene, this.camera);
+    this._raf = requestAnimationFrame(this.animate);
+  };
+
+  sanitize(s) { return (s || '').toUpperCase().replace(/[^ATGC]/g, '').slice(0, 60); }
+
+  setSpeed(v) { this.speedRad = (v / 100) * 1.6; if (v > 0) this.intro = 0; this.state.speed = v; }
+  setExplode(v) {
+    const f = (v / 100) * this.EXPLODE_MAX;
+    this.RISE = this.RISE_BASE * (1 + f);
+    this.R = this.R_BASE * (1 + f * 0.62);
+    this.state.explode = v; this.intro = 0;
+    this.closeDetail();
+    if (this.state.sequence.length >= 1) this.buildAll(this.state.sequence);
+  }
+  setSequence(v) {
+    const s = this.sanitize(v);
+    this.state.sequence = s;
+    this.closeDetail();
+    if (s.length >= 1) this.buildAll(s);
+    return s;
+  }
+  // ---- barre de séquençage : parcours + zoom sur une zone du brin ----
+  setPan(frac) { this.panFrac = Math.max(0, Math.min(1, frac)); this.hideTip && this.hideTip(); }
+  zoomStep(dir) {   // dir < 0 : zoomer (se rapprocher) ; dir > 0 : dézoomer
+    const d = this.dist * (dir > 0 ? 1.4 : 0.71);
+    this.dist = Math.max(4.5, Math.min(this.helixDist || 21, d));
+    this.targetDist = this.dist; this.tweening = false;
+  }
+  fitStrand() {   // recadrer tout le brin, recentré
+    this.panFrac = 0.5;
+    this.dist = this.helixDist || 21; this.targetDist = this.dist; this.tweening = false;
+  }
+  applyBg(name) {
+    const stage = this.mount.parentElement;
+    if (stage) stage.style.background = this.BG[name];
+    if (this.renderer) this.renderer.toneMappingExposure = name === 'clair' ? 0.95 : 1.04;
+    this.state.bg = name;
+  }
+
+  // bind DOM refs + controls
+  bindUI(refs) {
+    this._title = refs.title; this._sub = refs.sub; this._marker = refs.marker; this._legend = refs.legend;
+    this._tip = refs.tip; this._detail = refs.detail;
+  }
+  reflectView() {
+    for (const k of ['helix', 'nuc', 'atom']) {
+      this._viewBtns[k].classList.toggle('active', this.state.view === k);
+    }
+  }
+}
+
+// ---------- bootstrap ----------
+const stage = document.getElementById('stage');
+const mount = document.getElementById('mount');
+const loading = document.getElementById('loading');
+const loadError = document.getElementById('loadError');
+
+const viz = new DNAViz(mount);
+
+viz.bindUI({
+  title: document.getElementById('scaleTitle'),
+  sub: document.getElementById('scaleSub'),
+  marker: document.getElementById('marker'),
+  legend: document.getElementById('legend'),
+  tip: {
+    el: document.getElementById('tip'),
+    chip: document.getElementById('tipChip'),
+    name: document.getElementById('tipName'),
+    sub: document.getElementById('tipSub'),
+  },
+  detail: {
+    el: document.getElementById('detail'),
+    chip: document.getElementById('dChip'),
+    name: document.getElementById('dName'),
+    meta: document.getElementById('dMeta'),
+    rows: document.getElementById('dRows'),
+    pairA: document.getElementById('dPairA'),
+    pairB: document.getElementById('dPairB'),
+    bonds: document.getElementById('dBonds'),
+    pairText: document.getElementById('dPairText'),
+  },
+});
+
+// view buttons
+viz._viewBtns = {
+  helix: document.getElementById('viewHelix'),
+  nuc: document.getElementById('viewNuc'),
+  atom: document.getElementById('viewAtom'),
+};
+viz._viewBtns.helix.addEventListener('click', () => viz.setView('helix'));
+viz._viewBtns.nuc.addEventListener('click', () => viz.setView('nuc'));
+viz._viewBtns.atom.addEventListener('click', () => viz.setView('atom'));
+
+// sliders
+const speedEl = document.getElementById('speed');
+const speedLabel = document.getElementById('speedLabel');
+speedEl.addEventListener('input', () => {
+  const v = parseInt(speedEl.value, 10) || 0;
+  viz.setSpeed(v);
+  speedLabel.textContent = v === 0 ? 'arrêt' : v + '%';
+});
+const explodeEl = document.getElementById('explode');
+const explodeLabel = document.getElementById('explodeLabel');
+explodeEl.addEventListener('input', () => {
+  const v = parseInt(explodeEl.value, 10) || 0;
+  viz.setExplode(v);
+  explodeLabel.textContent = v === 0 ? 'compact' : '×' + (1 + (v / 100) * viz.EXPLODE_MAX).toFixed(1);
+});
+
+// background buttons
+const bgBtns = { sombre: document.getElementById('bgSombre'), bleu: document.getElementById('bgBleu'), clair: document.getElementById('bgClair') };
+const setBg = (name) => {
+  viz.applyBg(name);
+  for (const k in bgBtns) bgBtns[k].classList.toggle('active', k === name);
+};
+bgBtns.sombre.addEventListener('click', () => setBg('sombre'));
+bgBtns.bleu.addEventListener('click', () => setBg('bleu'));
+bgBtns.clair.addEventListener('click', () => setBg('clair'));
+
+// sequence
+const seqEl = document.getElementById('seq');
+seqEl.addEventListener('input', () => { viz.setSequence(seqEl.value); });
+seqEl.addEventListener('change', () => { seqEl.value = viz.state.sequence; });
+document.getElementById('randomize').addEventListener('click', () => {
+  const L = 24 + Math.floor(Math.random() * 17), a = 'ATGC';
+  let s = ''; for (let i = 0; i < L; i++) s += a[Math.floor(Math.random() * 4)];
+  seqEl.value = viz.setSequence(s);
+});
+
+// detail close
+document.getElementById('detailClose').addEventListener('click', () => viz.closeDetail());
+
+// ---- barre de séquençage : parcourir le brin + zoomer sur une zone précise ----
+const seqbar = (function () {
+  const strip = document.getElementById('sbStrip');
+  const label = document.getElementById('sbLabel');
+  let dragging = false;
+
+  function rebuild() {
+    const seq = viz.state.sequence || '';
+    const col = viz.UICOL;
+    strip.innerHTML =
+      seq.split('').map(b => `<span class="sb-tile" style="--c:${col[b] || '#888'}">${b}</span>`).join('') +
+      '<div class="sb-window"></div>';
+  }
+  function visibleFrac() {
+    const N = viz.N || 1;
+    const fov = viz.camera.fov * Math.PI / 180;
+    const visNucs = (2 * viz.dist * Math.tan(fov / 2)) / viz.RISE;
+    return Math.max(1 / N, Math.min(1, visNucs / N));
+  }
+  function sync() {
+    const N = viz.N || 1, wf = visibleFrac();
+    let x = viz.panFrac - wf / 2; x = Math.max(0, Math.min(1 - wf, x));
+    const w = strip.querySelector('.sb-window');
+    if (w) { w.style.left = (x * 100).toFixed(2) + '%'; w.style.width = (wf * 100).toFixed(2) + '%'; }
+    const txt = 'Nucléotide ' + (Math.round(viz.panFrac * (N - 1)) + 1) + ' sur ' + N;
+    if (label.textContent !== txt) label.textContent = txt;
+  }
+  const fracFromEvent = e => { const r = strip.getBoundingClientRect(); return (e.clientX - r.left) / r.width; };
+  strip.addEventListener('pointerdown', e => { dragging = true; strip.classList.add('grabbing'); try { strip.setPointerCapture(e.pointerId); } catch (_) {} viz.setPan(fracFromEvent(e)); });
+  strip.addEventListener('pointermove', e => { if (dragging) viz.setPan(fracFromEvent(e)); });
+  const end = () => { dragging = false; strip.classList.remove('grabbing'); };
+  strip.addEventListener('pointerup', end);
+  strip.addEventListener('pointercancel', end);
+  document.getElementById('sbZoomIn').addEventListener('click', () => viz.zoomStep(-1));
+  document.getElementById('sbZoomOut').addEventListener('click', () => viz.zoomStep(1));
+  document.getElementById('sbFit').addEventListener('click', () => viz.fitStrand());
+
+  viz._seqbarSync = sync;                       // appelé chaque frame par animate()
+  const _set = viz.setSequence.bind(viz);       // reconstruire les tuiles à chaque changement de séquence
+  viz.setSequence = (v) => { const r = _set(v); rebuild(); return r; };
+  return { rebuild };
+})();
+
+// go
+viz.init().then(() => {
+  loading.style.display = 'none';
+  seqbar.rebuild();
+}).catch((e) => {
+  console.error('Échec init ADN 3D', e);
+  loading.style.display = 'none';
+  loadError.style.display = 'flex';
+});
+</script>
+</body>
+</html>
