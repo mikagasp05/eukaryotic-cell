@@ -5206,8 +5206,10 @@ function tick() {
       e.el.style.opacity = 0;
       continue;
     }
-    let r = (n.x * 0.5 + 0.5) * innerWidth,
-      i = (-n.y * 0.5 + 0.5) * innerHeight;
+    // Arrondi au pixel : une position fractionnaire qui change a chaque image fait
+    // vibrer le texte de l'etiquette.
+    let r = Math.round((n.x * 0.5 + 0.5) * innerWidth),
+      i = Math.round((-n.y * 0.5 + 0.5) * innerHeight);
     ((e.el.style.transform = `translate(${r}px,${i}px) translate(-50%,-50%)`),
       (e.el.style.opacity = t.labelAlpha * 0.96));
   }
@@ -5220,10 +5222,12 @@ function tick() {
       ((t.el.style.display = `none`), (t.line.style.display = `none`), (t.dot.style.display = `none`));
       continue;
     }
-    let i = (r.x * 0.5 + 0.5) * innerWidth,
-      a = (-r.y * 0.5 + 0.5) * innerHeight,
-      o = clamp(i + (i < innerWidth * 0.5 ? 150 : -150), 130, innerWidth - 130),
-      s = clamp(a - 72, 80, innerHeight - 96),
+    // Meme raison que pour les etiquettes : la fiche suit son organite image par image,
+    // et une position fractionnaire la fait vibrer. On arrondit l'ancre ET la fiche.
+    let i = Math.round((r.x * 0.5 + 0.5) * innerWidth),
+      a = Math.round((-r.y * 0.5 + 0.5) * innerHeight),
+      o = Math.round(clamp(i + (i < innerWidth * 0.5 ? 150 : -150), 130, innerWidth - 130)),
+      s = Math.round(clamp(a - 72, 80, innerHeight - 96)),
       c = e.labelAlpha;
     ((t.el.style.display = `block`),
       (t.el.style.opacity = c),

@@ -14,6 +14,7 @@ html,body{margin:0;padding:0;background:#150c11;overflow:hidden}
 a{color:#f0a273;text-decoration:none}
 a:hover{color:#ffc9a8}
 @keyframes cardIn{from{opacity:0}to{opacity:1}}
+@keyframes odRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
 /* --- Glissieres : meme design que la cellule animale (index.html), decline dans
    l'orange de la fibre. Meme piste arrondie, meme pouce carre a trois barres.    */
@@ -136,6 +137,32 @@ a:hover{color:#ffc9a8}
     </sc-if>
   </div>
 
+  <!-- Fiches d'information. renderNow() les repositionne a chaque image sur l'ancre 3D
+       de l'organite (cf. [data-card-id]) : elles sont donc en position absolue, l'offset
+       etant pose par transform. Meme registre que la cellule vegetale, en orange.
+       Pas de backdrop-filter ici : reechantillonner un flou d'arriere-plan a chaque
+       image, sur un element qui bouge, faisait clignoter la fiche pendant la rotation.
+       Un fond opaque rend le meme service pour rien. -->
+  <sc-for list="{{ cards }}" as="card" hint-placeholder-count="0">
+    <div data-card-id="{{ card.id }}" style="position:absolute;left:0;top:0;z-index:5;width:252px;padding:12px 14px 13px;border-radius:9px;background:rgba(24,13,17,.96);border:1px solid {{ card.br }};box-shadow:0 24px 60px rgba(0,0,0,.55);animation:cardIn .22s ease both">
+      <div onPointerDown="{{ card.onDrag }}" style="display:flex;align-items:center;gap:9px;cursor:grab;touch-action:none">
+        <div style="width:8px;height:8px;border-radius:50%;flex:none;background:{{ card.dot }}"></div>
+        <div style="flex:1;font-size:13.5px;font-weight:600;color:#f9ece7">{{ card.name }}</div>
+        <sc-if value="{{ card.pinned }}" hint-placeholder-val="{{ false }}">
+          <div data-card-btn="1" onClick="{{ card.reanchor }}" title="Raccrocher la fiche à l'organite" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(240,162,115,.75);font-size:12px">&#9678;</div>
+        </sc-if>
+        <div data-card-btn="1" onClick="{{ card.close }}" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(244,231,227,.45);font-size:13px">×</div>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;color:rgba(244,231,227,.42);margin:3px 0 11px 17px">{{ card.sub }}</div>
+      <div style="display:grid;grid-template-columns:92px 1fr;gap:7px 12px">
+        <sc-for list="{{ card.rows }}" as="row" hint-placeholder-count="3">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:rgba(244,231,227,.4);line-height:1.5">{{ row.k }}</div>
+          <div style="font-size:11.5px;color:rgba(249,236,231,.88);line-height:1.45">{{ row.v }}</div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-for>
+
   <div data-mus-tip="1" ref="{{ tipRef }}" style="position:absolute;left:0;top:0;z-index:6;transform:translate(-9999px,-9999px);pointer-events:none;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#fbe6d8;background:rgba(15,8,11,.82);border:1px solid rgba(240,162,115,.28);padding:5px 9px;border-radius:5px;white-space:nowrap"></div>
 
   <div style="position:absolute;left:50%;bottom:0;z-index:7;width:{{ odWidth }};padding:0 22px {{ odPadBottom }};border-radius:16px 16px 0 0;background:rgba(28,15,20,.94);border:1px solid rgba(255,255,255,.15);border-bottom:none;backdrop-filter:blur(18px);box-shadow:{{ odShadow }};display:flex;flex-direction:column;transform:translate(-50%,0);transition:width .52s cubic-bezier(.22,.9,.24,1), padding-bottom .52s cubic-bezier(.22,.9,.24,1), box-shadow .3s ease">
@@ -211,7 +238,7 @@ class CelluleMusculaire extends DC.Logic {
     this.tipRef = DC.ref();
     this.fadeRef = DC.ref();
     const S = window.__musStage || (window.__musStage = {
-      level: 0, cards: [], row: null, odClosed: true, odFam: 0,   // aucun reglage deplie au demarrage
+      level: 0, cards: [], cardPos: {}, row: null, odClosed: true, odFam: 0,   // aucun reglage deplie au demarrage
       rotOn: !!p.autoRotate, rotSpeed: 0.3,
       cut: typeof p.cut === 'number' ? p.cut : 0.55,
       spread: p.spread === 'éclaté' ? 1 : 0, resetView: 0
@@ -223,33 +250,37 @@ class CelluleMusculaire extends DC.Logic {
       { name: 'Sarcomère', size: '≈ 2 µm', tag: 'sarcomère', field: 4, unit: 'µm', rad: 8.7, phi: 1.08, theta: -0.6, rz: 1.05, clip: true },
       { name: "Ponts d'union", size: '≈ 10 nm', tag: 'pont', field: 45, unit: 'nm', rad: 8.9, phi: 1.2, theta: -0.45, rz: 1.3, clip: false }
     ];
+    /* Contenu des fiches — repris du Livret de cours O.S., chapitre 5 « Systeme
+       musculaire » (Ed. Ecole Lemania). L'ordre des lignes suit celui du cours :
+       structure, puis role, puis les rapprochements avec les muscles lisse et
+       cardiaque que le chapitre met systematiquement en regard. */
     this.INFO = {
-      endomysium: { name: 'Endomysium', sub: 'gaine de tissu conjonctif', dot: '#c8a179', rows: [{ k: 'Rôle', v: 'entoure chaque fibre' }, { k: 'Contient', v: 'capillaires et nerfs' }, { k: 'Au-dessus', v: 'périmysium, épimysium' }] },
-      sarcolemme: { name: 'Sarcolemme', sub: 'membrane plasmique', dot: '#d4707c', rows: [{ k: 'Autre nom', v: 'membrane plasmique' }, { k: 'Rôle', v: "propage le potentiel d'action" }, { k: 'Récepteurs', v: "à l'acétylcholine" }] },
-      jonction: { name: 'Plaque motrice', sub: 'jonction neuromusculaire', dot: '#e8c46a', rows: [{ k: 'Structure', v: 'ensemble de télodendrons' }, { k: 'Position', v: '1 par fibre, en son milieu' }, { k: 'Libère', v: 'acétylcholine par exocytose' }, { k: 'Effet', v: 'canaux Na⁺/K⁺ → PA' }] },
-      tubuleT: { name: 'Tubule transverse', sub: 'invagination du sarcolemme', dot: '#5a9ed6', rows: [{ k: 'Rôle', v: "conduit le PA à l'intérieur" }, { k: 'Trajet', v: 'ceinture les myofibrilles' }, { k: 'Triade', v: '1 tubule T + 2 citernes' }] },
-      rs: { name: 'Réticulum sarcoplasmique', sub: 'réservoir de calcium', dot: '#5fb0d0', rows: [{ k: 'Équivalent', v: 'réticulum endoplasmique' }, { k: 'Rôle', v: 'stocke et libère le Ca²⁺' }, { k: 'Retour', v: 'par transport actif' }] },
-      myofibrille: { name: 'Myofibrille', sub: 'élément contractile', dot: '#c9505a', rows: [{ k: 'Nombre', v: '100 à 1000 par fibre' }, { k: 'Structure', v: 'chaîne de sarcomères' }, { k: 'Aspect', v: 'bandes A sombres, I claires' }] },
-      noyau: { name: 'Noyaux', sub: 'périphériques', dot: '#8f7ce0', rows: [{ k: 'Position', v: 'plaqués sous le sarcolemme' }, { k: 'Nombre', v: 'plusieurs par fibre' }, { k: 'Origine', v: 'fusion de myoblastes' }] },
-      mitochondrie: { name: 'Mitochondries', sub: "production d'ATP", dot: '#e8a05e', rows: [{ k: 'Rôle', v: 'respiration cellulaire' }, { k: 'Position', v: 'entre les myofibrilles' }, { k: 'Carburant', v: 'glucose, acides gras' }] },
-      glycogene: { name: 'Glycogène', sub: 'réserve de glucides', dot: '#f2e2c4', rows: [{ k: 'Rôle', v: 'source rapide de glucose' }, { k: 'Voie', v: 'glycolyse anaérobie' }, { k: 'Voisins', v: 'gouttelettes lipidiques' }] },
-      sarcoplasme: { name: 'Sarcoplasme', sub: 'cytoplasme de la fibre', dot: '#a8555f', rows: [{ k: 'Autre nom', v: 'cytoplasme' }, { k: 'Contient', v: 'myoglobine' }, { k: 'Rôle', v: "réserve d'oxygène" }] },
-      strieZ: { name: 'Strie Z', sub: 'limite du sarcomère', dot: '#f0d3c0', rows: [{ k: 'Rôle', v: 'ancre les filaments fins' }, { k: 'Structure', v: 'disque protéique' }, { k: 'Écart', v: '≈ 2 µm au repos' }] },
-      actine: { name: "Filament fin d'actine", sub: 'bande I', dot: '#e9b48f', rows: [{ k: 'Bande', v: 'I — claire' }, { k: 'Partenaires', v: 'tropomyosine, troponine' }, { k: 'Ancrage', v: 'strie Z' }] },
-      myosine: { name: 'Filament épais de myosine', sub: 'bande A', dot: '#c0454f', rows: [{ k: 'Bande', v: 'A — sombre' }, { k: 'Têtes', v: "ponts d'union" }, { k: 'Zone nue', v: 'au centre (zone H)' }] },
-      ligneM: { name: 'Ligne M', sub: 'centre du sarcomère', dot: '#d9d16a', rows: [{ k: 'Rôle', v: 'aligne les filaments épais' }, { k: 'Position', v: 'milieu de la zone H' }] },
-      titine: { name: 'Titine', sub: 'ressort moléculaire', dot: '#8fd0b0', rows: [{ k: 'Rôle', v: 'élasticité passive' }, { k: 'Trajet', v: 'strie Z → ligne M' }, { k: 'Effet', v: 'recentre les filaments' }] },
-      citerne: { name: 'Citerne terminale', sub: 'réticulum sarcoplasmique', dot: '#7fd0e8', rows: [{ k: 'Contenu', v: 'Ca²⁺ concentré' }, { k: 'Triade', v: '2 citernes + 1 tubule T' }, { k: 'Libération', v: 'canaux voltage-dépendants' }] },
-      tubuleT2: { name: 'Tubule transverse', sub: 'jonction des bandes A et I', dot: '#5a9ed6', rows: [{ k: 'Rôle', v: 'amène la dépolarisation' }, { k: 'Position', v: '2 par sarcomère' }, { k: 'Suite', v: 'Ca²⁺ dans le sarcoplasme' }] },
-      rsSleeve: { name: 'Réticulum sarcoplasmique', sub: 'manchon longitudinal', dot: '#5ab6d6', rows: [{ k: 'Forme', v: 'enveloppe la myofibrille' }, { k: 'Rôle', v: 'pompe le Ca²⁺ au repos' }, { k: 'Muscle lisse', v: 'moins développé' }] },
-      mito2: { name: 'Mitochondrie', sub: 'entre les myofibrilles', dot: '#e8a05e', rows: [{ k: 'Rôle', v: "fournit l'ATP du cycle" }, { k: 'Cardiaque', v: 'beaucoup plus nombreuses' }, { k: 'Effet', v: 'résistance à la fatigue' }] },
-      actineG: { name: 'Actine G', sub: 'monomère globulaire', dot: '#e8b48c', rows: [{ k: 'Assemblage', v: 'double hélice' }, { k: 'Site', v: 'fixation de la myosine' }, { k: 'Diamètre', v: '≈ 7 nm' }] },
-      tropomyosine: { name: 'Tropomyosine', sub: 'masque les sites', dot: '#6fbf9a', rows: [{ k: 'Au repos', v: 'bloque les sites' }, { k: 'Contraction', v: 'se déplace de côté' }, { k: 'Muscle lisse', v: 'stabilise les filaments' }] },
-      troponine: { name: 'Complexe de troponine', sub: 'capteur de calcium', dot: '#d8b04a', rows: [{ k: 'Fixe', v: 'le Ca²⁺' }, { k: 'Effet', v: 'déplace la tropomyosine' }, { k: 'Muscle lisse', v: 'remplacée par la calmoduline' }] },
-      teteMyosine: { name: 'Tête de myosine', sub: "pont d'union", dot: '#e2606c', rows: [{ k: 'Cycle', v: 'fixation, pivot, détachement' }, { k: 'Énergie', v: "hydrolyse de l'ATP" }, { k: 'Résultat', v: 'glissement des filaments' }] },
-      filamentEpais: { name: 'Filament épais', sub: 'faisceau de myosines', dot: '#8f2f3a', rows: [{ k: 'Structure', v: 'queues enroulées' }, { k: 'Têtes', v: 'en hélice autour' }, { k: 'Nombre', v: '≈ 300 molécules' }] },
-      calcium: { name: 'Ion Ca²⁺', sub: 'signal de contraction', dot: '#9fe0ff', rows: [{ k: 'Origine', v: 'réticulum sarcoplasmique' }, { k: 'Cible', v: 'la troponine' }, { k: 'Retour', v: 'pompe active' }] },
-      atp: { name: 'ATP', sub: 'carburant du cycle', dot: '#f0c14a', rows: [{ k: 'Rôle', v: 'arme la tête de myosine' }, { k: 'Produit', v: 'ADP + Pi' }, { k: 'Source', v: 'mitochondries, glycolyse' }] }
+      endomysium: { name: 'Endomysium', sub: 'gaine de tissu conjonctif', dot: '#c8a179', rows: [{ k: 'Rôle', v: 'entoure chaque fibre' }, { k: 'Contient', v: 'capillaires et neurofibres' }, { k: 'Au-dessus', v: 'périmysium (faisceau), épimysium (muscle)' }, { k: 'Attache', v: 'directe au périoste, ou par un tendon' }, { k: 'Vieillissement', v: 'sa quantité augmente dès 30 ans' }] },
+      sarcolemme: { name: 'Sarcolemme', sub: 'membrane plasmique', dot: '#d4707c', rows: [{ k: 'Autre nom', v: 'membrane plasmique' }, { k: 'Récepteurs', v: "à l'acétylcholine, groupés sous la plaque" }, { k: 'Canaux', v: 'Na⁺/K⁺ ligand-dépendants' }, { k: 'Rôle', v: "propage le potentiel d'action" }] },
+      jonction: { name: 'Plaque motrice', sub: 'jonction neuromusculaire', dot: '#e8c46a', rows: [{ k: 'Structure', v: 'ensemble de télodendrons à corpuscule terminal' }, { k: 'Position', v: '1 par fibre, à peu près en son milieu' }, { k: 'Déclenche', v: 'PA → canaux Ca²⁺ voltage-dépendants' }, { k: 'Libère', v: "l'acétylcholine par exocytose" }, { k: 'Puis', v: 'ACh dégradée, recyclée, diffusée hors de la fente' }, { k: 'Unité motrice', v: '1 neurone ≈ 150 fibres' }] },
+      tubuleT: { name: 'Tubule transverse', sub: 'invagination du sarcolemme', dot: '#5a9ed6', rows: [{ k: 'Rôle', v: "conduit le PA à l'intérieur de la fibre" }, { k: 'Trajet', v: 'ceinture les myofibrilles' }, { k: 'Triade', v: '1 tubule T + 2 citernes terminales' }, { k: 'Cardiaque', v: 'moins nombreux, plus larges, pas de triade' }, { k: 'Lisse', v: 'absents — remplacés par des cavéoles' }] },
+      rs: { name: 'Réticulum sarcoplasmique', sub: 'réservoir de calcium', dot: '#8a79c8', rows: [{ k: 'Équivalent', v: 'réticulum endoplasmique' }, { k: 'Rôle', v: 'stocke puis libère le Ca²⁺ dans le sarcoplasme' }, { k: 'Libération', v: 'canaux voltage-dépendants, au passage du PA' }, { k: 'Retour', v: "par transport actif (consomme de l'ATP)" }] },
+      myofibrille: { name: 'Myofibrille', sub: 'élément contractile', dot: '#c9505a', rows: [{ k: 'Nombre', v: '100 à 1000 par fibre' }, { k: 'Structure', v: 'chaîne de sarcomères' }, { k: 'Bande A', v: 'sombre — filaments épais de myosine' }, { k: 'Bande I', v: "claire — filaments fins d'actine" }, { k: 'Unité', v: 'le sarcomère = unité contractile' }] },
+      noyau: { name: 'Noyaux', sub: 'périphériques', dot: '#8f7ce0', rows: [{ k: 'Position', v: 'plaqués sous le sarcolemme' }, { k: 'Nombre', v: 'plusieurs par fibre' }, { k: 'Origine', v: 'fusion de plusieurs myoblastes' }, { k: 'Lisse', v: 'un seul noyau, central' }, { k: 'Croissance', v: 'hypertrophie, pas de division' }] },
+      mitochondrie: { name: 'Mitochondries', sub: "production d'ATP", dot: '#e8a05e', rows: [{ k: 'Rôle', v: "voie aérobie de régénération de l'ATP" }, { k: 'Position', v: 'entre les myofibrilles' }, { k: 'Carburant', v: 'glucose, puis acides gras' }, { k: 'Après 30 min', v: 'les acides gras deviennent la source principale' }] },
+      glycogene: { name: 'Glycogène', sub: 'réserve de glucides', dot: '#f2e2c4', rows: [{ k: 'Rôle', v: 'source rapide de glucose' }, { k: 'Voie', v: 'glycolyse anaérobie — sans oxygène' }, { k: 'Atout', v: "prend le relais quand l'ATP stocké est épuisé" }, { k: 'Voisins', v: 'gouttelettes lipidiques' }] },
+      sarcoplasme: { name: 'Sarcoplasme', sub: 'cytoplasme de la fibre', dot: '#a8555f', rows: [{ k: 'Autre nom', v: 'cytoplasme' }, { k: 'Contient', v: 'myoglobine, glycogène, gouttelettes lipidiques' }, { k: 'Myoglobine', v: "réserve d'oxygène de la fibre" }, { k: 'Calcium', v: 'sa concentration commande la contraction' }] },
+      strieZ: { name: 'Strie Z', sub: 'limite du sarcomère', dot: '#f0d3c0', rows: [{ k: 'Rôle', v: "ancre les filaments fins d'actine" }, { k: 'Structure', v: 'disque protéique' }, { k: 'Écart', v: '≈ 2 µm au repos' }, { k: 'Contraction', v: 'les stries Z se rapprochent' }] },
+      actine: { name: "Filament fin d'actine", sub: 'bande I', dot: '#e9b48f', rows: [{ k: 'Bande', v: 'I — claire' }, { k: 'Partenaires', v: 'tropomyosine, complexe de troponine' }, { k: 'Ancrage', v: 'strie Z' }, { k: 'Contraction', v: 'glisse vers la ligne M — la bande I rétrécit' }] },
+      myosine: { name: 'Filament épais de myosine', sub: 'bande A', dot: '#c0454f', rows: [{ k: 'Bande', v: 'A — sombre, longueur constante' }, { k: 'Têtes', v: "ponts d'union avec l'actine" }, { k: 'Zone nue', v: 'au centre (zone H), sans têtes' }, { k: 'Contraction', v: 'les filaments glissent, ils ne raccourcissent pas' }] },
+      ligneM: { name: 'Ligne M', sub: 'centre du sarcomère', dot: '#d9d16a', rows: [{ k: 'Rôle', v: 'aligne les filaments épais' }, { k: 'Position', v: 'milieu de la zone H' }, { k: 'Symétrie', v: 'les têtes pointent vers les deux stries Z' }] },
+      titine: { name: 'Titine', sub: 'ressort moléculaire', dot: '#8fd0b0', rows: [{ k: 'Rôle', v: 'élasticité passive du sarcomère' }, { k: 'Trajet', v: 'strie Z → ligne M' }, { k: 'Effet', v: "recentre les filaments après l'étirement" }, { k: 'Étirement', v: '± 30 % de la longueur de repos (squelettique)' }] },
+      citerne: { name: 'Citerne terminale', sub: 'réticulum sarcoplasmique', dot: '#7fd0e8', rows: [{ k: 'Contenu', v: 'Ca²⁺ concentré' }, { k: 'Triade', v: '2 citernes + 1 tubule T' }, { k: 'Libération', v: 'canaux voltage-dépendants du RS' }, { k: 'Relâchement', v: 'le Ca²⁺ y est repompé activement' }] },
+      tubuleT2: { name: 'Tubule transverse', sub: 'jonction des bandes A et I', dot: '#5a9ed6', rows: [{ k: 'Rôle', v: 'amène la dépolarisation au cœur du sarcomère' }, { k: 'Position', v: '2 par sarcomère' }, { k: 'Origine', v: 'invagination du sarcolemme' }, { k: 'Suite', v: 'libération du Ca²⁺ dans le sarcoplasme' }] },
+      rsSleeve: { name: 'Réticulum sarcoplasmique', sub: 'manchon longitudinal', dot: '#8a79c8', rows: [{ k: 'Forme', v: 'enveloppe chaque myofibrille' }, { k: 'Rôle', v: 'pompe et retient le Ca²⁺ au repos' }, { k: 'Lisse', v: 'moins développé, disposition irrégulière' }, { k: 'Cardiaque', v: 'moins développé — pas de triade' }] },
+      mito2: { name: 'Mitochondrie', sub: 'entre les myofibrilles', dot: '#e8a05e', rows: [{ k: 'Rôle', v: "fournit l'ATP du cycle des ponts d'union" }, { k: 'Sert aussi', v: 'la pompe à Ca²⁺ et la pompe Na⁺/K⁺' }, { k: 'Cardiaque', v: 'beaucoup plus nombreuses' }, { k: 'Effet', v: 'grande résistance à la fatigue' }] },
+      actineG: { name: 'Actine G', sub: 'monomère globulaire', dot: '#e8b48c', rows: [{ k: 'Assemblage', v: 'double hélice de monomères' }, { k: 'Site', v: 'fixation de la tête de myosine' }, { k: 'Diamètre', v: '≈ 7 nm' }, { k: 'Au repos', v: 'site masqué par la tropomyosine' }] },
+      tropomyosine: { name: 'Tropomyosine', sub: 'masque les sites', dot: '#6fbf9a', rows: [{ k: 'Au repos', v: 'bloque les sites de fixation' }, { k: 'Contraction', v: 'se déplace de côté et les découvre' }, { k: 'Commandée par', v: 'la troponine chargée en Ca²⁺' }, { k: 'Lisse', v: 'présente, mais rôle de stabilisation mécanique' }] },
+      troponine: { name: 'Complexe de troponine', sub: 'capteur de calcium', dot: '#d8b04a', rows: [{ k: 'Fixe', v: 'le Ca²⁺ libéré par le RS' }, { k: 'Effet', v: 'déplace la tropomyosine' }, { k: 'Résultat', v: "sites de l'actine accessibles" }, { k: 'Lisse', v: 'absente — remplacée par la calmoduline' }] },
+      teteMyosine: { name: 'Tête de myosine', sub: "pont d'union", dot: '#e2606c', rows: [{ k: 'Cycle', v: 'fixation, pivot, détachement, armement' }, { k: 'Énergie', v: "hydrolyse de l'ATP" }, { k: 'Détachement', v: "exige une nouvelle molécule d'ATP" }, { k: 'Résultat', v: 'glissement des filaments' }, { k: 'Sans ATP', v: 'liaison irréversible → rigidité cadavérique' }] },
+      filamentEpais: { name: 'Filament épais', sub: 'faisceau de myosines', dot: '#8f2f3a', rows: [{ k: 'Structure', v: 'queues enroulées ensemble' }, { k: 'Têtes', v: 'en hélice autour du filament' }, { k: 'Nombre', v: '≈ 300 molécules' }, { k: 'Lisse', v: 'têtes réparties sur toute la longueur' }] },
+      calcium: { name: 'Ion Ca²⁺', sub: 'signal de contraction', dot: '#9fe0ff', rows: [{ k: 'Origine', v: 'réticulum sarcoplasmique' }, { k: 'Cible', v: 'le complexe de troponine' }, { k: 'Retour', v: 'transport actif vers le RS' }, { k: 'Cardiaque', v: '10 à 20 % vient du liquide interstitiel' }, { k: 'Lisse', v: 'surtout du liquide interstitiel (cavéoles)' }] },
+      atp: { name: 'ATP', sub: 'carburant du cycle', dot: '#f0c14a', rows: [{ k: 'Rôle', v: 'arme la tête de myosine, puis la détache' }, { k: 'Produit', v: 'ADP + phosphate inorganique' }, { k: 'Réserve', v: '4 à 6 s de contraction seulement' }, { k: 'Régénération', v: '3 voies — très rapide' }, { k: 'Sert aussi', v: 'pompe à Ca²⁺ du RS, pompe Na⁺/K⁺' }] }
     };
     /* --- Plongee « powers of ten » -------------------------------------------
        Portee de assets/engine.js (la cellule animale) : au lieu de basculer d'une
@@ -351,7 +382,15 @@ class CelluleMusculaire extends DC.Logic {
   }
   componentDidMount() {
     this.mounted = true;
-    this._onS = () => { if (this.mounted) this.forceUpdate(); };
+    // Chaque rendu recree les fiches, donc sans leur transform. Si on attendait l'image
+    // suivante pour les replacer, elles apparaitraient un instant en haut a gauche : c'est
+    // ce sursaut, repete a chaque sync, qui donnait l'impression d'un clignotement.
+    this._onS = () => {
+      if (!this.mounted) return;
+      this.forceUpdate();
+      this.placeNow();
+      setTimeout(() => this.placeNow(), 0);   // au cas ou le rendu soit differe
+    };
     window.addEventListener('mus:state', this._onS);
     this.waitLib();
   }
@@ -495,6 +534,94 @@ class CelluleMusculaire extends DC.Logic {
     g.rotateZ(Math.PI / 2);
     return g;
   }
+  /* Manchon fenetre du reticulum sarcoplasmique.
+     Le RS n'est pas une cage de tubes paralleles : c'est une membrane CONTINUE plaquee
+     sur la myofibrille et percee d'ouvertures irregulieres, par lesquelles on voit le
+     rouge des filaments dessous (cf. la planche du cours). On maille donc une nappe
+     cylindrique, on evide les mailles qui tombent dans une fenetre, et on referme les
+     bords par un lisere : la paroi a une epaisseur, les trous sont de vrais trous.
+     Normales posees a la main (radiales sur les deux nappes, plates sur le lisere) —
+     computeVertexNormals() moyennerait les deux et arrondirait le bord des fenetres. */
+  fenestra(o) {
+    const T = this.T;
+    const nu = o.nu || 88, nv = o.nv || 34, TAU = Math.PI * 2;
+    const x0 = o.x0, x1 = o.x1, R = o.rad, th = o.th === undefined ? 0.05 : o.th;
+    const fx = o.fx === undefined ? 2.5 : o.fx, fa = o.fa === undefined ? 2.4 : o.fa;
+    const thr = o.thr === undefined ? 0.1 : o.thr, bands = o.bands || 0;
+    const pos = [], nor = [];
+
+    // Rayon legerement ondulant : une membrane, pas un tube de plomberie.
+    const RR = (u, a) => R * (1 + 0.05 * this.nz((x0 + (x1 - x0) * u) * 1.9, Math.cos(a) * 1.6, Math.sin(a) * 1.6));
+    // s = +1 nappe externe, -1 nappe interne.
+    const P = (u, a, s) => {
+      const r = RR(u, a) + s * th * 0.5;
+      return [x0 + (x1 - x0) * u, Math.cos(a) * r, Math.sin(a) * r];
+    };
+    // Champ de fenetrage. Nourri du point 3D, il boucle tout seul sur le tour.
+    const isHole = (u, a) => {
+      let f = this.nz((x0 + (x1 - x0) * u) * fx, Math.cos(a) * fa, Math.sin(a) * fa);
+      if (bands) f += 0.4 * Math.sin(u * Math.PI * bands);   // fenetres alignees en rangees
+      return f > thr;
+    };
+
+    const H = [];
+    for (let i = 0; i < nu; i++) {
+      H.push([]);
+      for (let j = 0; j < nv; j++) H[i].push(isHole((i + 0.5) / nu, (j + 0.5) / nv * TAU));
+    }
+    // Bords francs : les deux anneaux d'extremite restent pleins.
+    for (let j = 0; j < nv; j++) { H[0][j] = false; H[1][j] = false; H[nu - 1][j] = false; H[nu - 2][j] = false; }
+    // Colliers pleins : la membrane se referme la ou elle rejoint les citernes terminales.
+    (o.solid || []).forEach(s => {
+      for (let i = 0; i < nu; i++) {
+        if (Math.abs((i + 0.5) / nu - s[0]) > s[1]) continue;
+        for (let j = 0; j < nv; j++) H[i][j] = false;
+      }
+    });
+
+    const tri = (A, B, C, n) => {
+      pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+      for (let k = 0; k < 3; k++) nor.push(n[0], n[1], n[2]);
+    };
+    // Nappe : normale radiale par sommet, donc ombrage continu d'une maille a l'autre.
+    const sheet = (i, j, s) => {
+      const u0 = i / nu, u1 = (i + 1) / nu, a0 = j / nv * TAU, a1 = (j + 1) / nv * TAU;
+      const A = P(u0, a0, s), B = P(u1, a0, s), C = P(u1, a1, s), D = P(u0, a1, s);
+      const n0 = [0, s * Math.cos(a0), s * Math.sin(a0)], n1 = [0, s * Math.cos(a1), s * Math.sin(a1)];
+      pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+      nor.push(n0[0], n0[1], n0[2], n0[0], n0[1], n0[2], n1[0], n1[1], n1[2]);
+      pos.push(A[0], A[1], A[2], C[0], C[1], C[2], D[0], D[1], D[2]);
+      nor.push(n0[0], n0[1], n0[2], n1[0], n1[1], n1[2], n1[0], n1[1], n1[2]);
+    };
+    // Lisere : relie nappe externe et nappe interne le long d'un bord de fenetre.
+    const rim = (ua, aa, ub, ab) => {
+      const A = P(ua, aa, 1), B = P(ub, ab, 1), C = P(ub, ab, -1), D = P(ua, aa, -1);
+      const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2];
+      const vx = D[0] - A[0], vy = D[1] - A[1], vz = D[2] - A[2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz2 = ux * vy - uy * vx;
+      const l = Math.hypot(nx, ny, nz2) || 1;
+      const n = [nx / l, ny / l, nz2 / l];
+      tri(A, B, C, n); tri(A, C, D, n);
+    };
+
+    for (let i = 0; i < nu; i++) {
+      for (let j = 0; j < nv; j++) {
+        if (H[i][j]) continue;
+        sheet(i, j, 1); sheet(i, j, -1);
+        const u0 = i / nu, u1 = (i + 1) / nu, a0 = j / nv * TAU, a1 = (j + 1) / nv * TAU;
+        const jm = (j - 1 + nv) % nv, jp = (j + 1) % nv;
+        if (i === 0 || H[i - 1][j]) rim(u0, a1, u0, a0);
+        if (i === nu - 1 || H[i + 1][j]) rim(u1, a0, u1, a1);
+        if (H[i][jm]) rim(u0, a0, u1, a0);
+        if (H[i][jp]) rim(u1, a1, u0, a1);
+      }
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+    return g;
+  }
+
   inst(geo, material, list) {
     const T = this.T;
     const im = new T.InstancedMesh(geo, material, list.length);
@@ -582,16 +709,8 @@ class CelluleMusculaire extends DC.Logic {
 
     /* réticulum sarcoplasmique : manchons longitudinaux + citernes */
     const rs = new T.Group();
-    const rsM = this.clipMat(0x5fb0d0, { roughness: 0.45, transparent: true, opacity: 0.5 });
-    for (let k = 0; k < 16; k++) {
-      const ang = k / 16 * Math.PI * 2 + 0.2, rad = k % 2 ? 0.62 : 0.86, pts = [];
-      for (let i = 0; i <= 26; i++) {
-        const t = i / 26, x = -2.62 + 5.24 * t;
-        const w = 1 + 0.09 * Math.sin(t * 22 + k);
-        pts.push([x, Math.cos(ang) * rad * w, Math.sin(ang) * rad * w]);
-      }
-      rs.add(new T.Mesh(this.tubeG(pts, 0.021, 54, 5), rsM));
-    }
+    const rsM = this.clipMat(0x7566b4, { roughness: 0.5, transparent: true, opacity: 0.6, side: T.DoubleSide });
+    rs.add(new T.Mesh(this.fenestra({ x0: -2.62, x1: 2.62, rad: 0.8, th: 0.05, nu: 76, nv: 30, fx: 2.4, fa: 2.4, thr: 0.15 }), rsM));
     const stations = [-0.68, -0.23, 0.23, 0.68];
     const cisM = this.clipMat(0x7fd0e8, { roughness: 0.4, transparent: true, opacity: 0.62 });
     stations.forEach(u => {
@@ -827,19 +946,13 @@ class CelluleMusculaire extends DC.Logic {
 
     /* manchon de réticulum sarcoplasmique */
     const rs = new T.Group();
-    const rsM = this.clipMat(0x5ab6d6, { roughness: 0.45, transparent: true, opacity: 0.42 });
-    for (let k = 0; k < 18; k++) {
-      const ang = k / 18 * Math.PI * 2, pts = [];
-      for (let i = 0; i <= 24; i++) {
-        const t = i / 24, x = -2.2 + 4.4 * t, w = 0.9 * (1 + 0.07 * Math.sin(t * 16 + k));
-        pts.push([x, Math.cos(ang) * w, Math.sin(ang) * w]);
-      }
-      rs.add(new T.Mesh(this.tubeG(pts, 0.028, 46, 5), rsM));
-    }
-    for (let k = 0; k < 10; k++) {
-      const a1 = this.rr(0, 6.28), a2 = a1 + this.rr(0.3, 0.9), x = this.rr(-1.9, 1.9);
-      rs.add(new T.Mesh(this.tubeG(this.wiggle([x, Math.cos(a1) * 0.9, Math.sin(a1) * 0.9], [x + this.rr(-0.3, 0.3), Math.cos(a2) * 0.9, Math.sin(a2) * 0.9], 6, 0.1), 0.022, 24, 4), rsM));
-    }
+    const rsM = this.clipMat(0x7566b4, { roughness: 0.5, transparent: true, opacity: 0.66, side: T.DoubleSide });
+    // Colliers pleins en u = 0.2 et 0.8 : c'est la que le manchon rejoint les citernes
+    // terminales des triades (x = ±1.32 sur une nappe qui court de -2.2 a 2.2).
+    rs.add(new T.Mesh(this.fenestra({
+      x0: -2.2, x1: 2.2, rad: 0.9, th: 0.055, nu: 88, nv: 34,
+      fx: 3.6, fa: 3.2, thr: 0.15, solid: [[0.2, 0.035], [0.8, 0.035]]
+    }), rsM));
     g.add(this.reg(1, 'rsSleeve', rs, { fixed: true, anchor: new T.Vector3(-0.6, 1.15, 0.4) }));
 
     /* triades : citernes terminales + tubule T */
@@ -1182,7 +1295,7 @@ class CelluleMusculaire extends DC.Logic {
     // (le garde `moved < 6` en amont fait qu'une rotation ne passe pas par ici)
     if (!id || !this.INFO[id]) {
       if (!S.cards.length) return;
-      S.cards = [];
+      S.cards = []; S.cardPos = {};
       this.sync();
       return;
     }
@@ -1208,7 +1321,7 @@ class CelluleMusculaire extends DC.Logic {
     // On ne bascule plus d'un etat a l'autre : on vise la profondeur de la strate, et la
     // plongee s'y rend en continu en traversant les paliers intermediaires.
     this.depthTarget = Math.log10(this.fieldTop / this.V[n]);
-    this.S.cards = [];
+    this.S.cards = []; this.S.cardPos = {};
     this.sync();
   }
 
@@ -1265,7 +1378,7 @@ class CelluleMusculaire extends DC.Logic {
     if (dom !== this.curLevel) {
       this.curLevel = dom;
       this.S.level = dom;
-      this.S.cards = [];        // on change d'echelle : les fiches de l'ancienne n'ont plus de sens
+      this.S.cards = []; this.S.cardPos = {};        // on change d'echelle : les fiches de l'ancienne n'ont plus de sens
       this.setHover(null);
       this.applyCut();
       this.sync();
@@ -1288,22 +1401,96 @@ class CelluleMusculaire extends DC.Logic {
     }
   }
 
+  /* Placement des fiches. Trois garde-fous contre le clignotement observe pendant la
+     rotation :
+       - derriere la camera, project() renvoie un point MIROIR (v.z > 1). La fiche
+         sautait alors d'un bord a l'autre a chaque image : on garde la derniere
+         position valable au lieu de la suivre ;
+       - les coordonnees sont arrondies au pixel, sinon le sous-pixel fait vibrer le
+         texte a chaque image ;
+       - on n'ecrit le transform que s'il a change, pour ne pas reinvalider la couche
+         a 60 images par seconde sans raison.
+     Une fiche deplacee a la main (S.cardPos) ne suit plus l'ancre du tout. */
+  placeNow() {
+    if (!this.renderer || !this.mounted) return;
+    this.placeCards(this.renderer.domElement.clientWidth, this.renderer.domElement.clientHeight);
+  }
+
+  placeCards(w, h) {
+    const S = this.S;
+    document.querySelectorAll('[data-card-id]').forEach(el => {
+      const id = el.getAttribute('data-card-id');
+      let x, y;
+      const pin = S.cardPos && S.cardPos[id];
+      if (pin) {
+        x = pin.x; y = pin.y;
+      } else {
+        const p = this.parts[id];
+        if (!p) return;
+        const v = (p.anchor ? p.anchor.clone().add(p.obj.position) : p.obj.position.clone());
+        p.obj.parent.localToWorld(v);
+        v.project(this.camera);
+        if (v.z > 1) return;                     // ancre passee derriere la camera
+        x = (v.x * 0.5 + 0.5) * w - 126;
+        y = (-v.y * 0.5 + 0.5) * h - 26;
+      }
+      x = Math.round(Math.max(pin ? 8 : 352, Math.min(Math.max(360, w - 332), x)));
+      y = Math.round(Math.max(78, Math.min(h - 190, y)));
+      // left/top plutot que transform : c'est ce que fait le moteur de la cellule
+      // animale, dont les fiches ne tremblent pas. Une fiche deplacee par transform
+      // vit sur une couche du compositeur, repeinte en parallele du canvas WebGL, et
+      // les deux se desynchronisent pendant la rotation. En left/top elle reste dans
+      // le flux de mise en page et suit exactement le rythme de la page.
+      // Hysterese de 2 px. Sans elle, une cible qui oscille autour d'un demi-pixel fait
+      // osciller l'arrondi (701, 702, 701...) a chaque image : c'est du tremblement pur,
+      // pour un deplacement reel nul. La fiche ne bouge donc que si sa cible a vraiment
+      // derive. Les valeurs posees sont gardees sur l'element : une fiche recreee par un
+      // rendu n'en a pas, et se place alors d'un coup, sans transition.
+      if (!pin && el._px !== undefined && Math.abs(x - el._px) < 2 && Math.abs(y - el._py) < 2) return;
+      el._px = x; el._py = y;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+    });
+  }
+
+  /* Deplacement d'une fiche a la souris. Seules les fiches sont concernees : les
+     panneaux de reglage du HUD restent ancres a leur coin. */
+  dragCard(e, id) {
+    if (e.target && e.target.closest && e.target.closest('[data-card-btn]')) return;   // croix / raccrochage
+    const el = e.currentTarget.closest('[data-card-id]');
+    if (!el) return;
+    e.preventDefault(); e.stopPropagation();
+    const S = this.S;
+    S.cardPos = S.cardPos || {};
+    const par = el.offsetParent || el.parentNode;
+    const pr = par.getBoundingClientRect(), er = el.getBoundingClientRect();
+    const ox = er.left - pr.left, oy = er.top - pr.top, gx = e.clientX, gy = e.clientY;
+    const head = e.currentTarget;
+    head.style.cursor = 'grabbing';
+    let moved = 0;
+    const move = ev => {
+      moved += Math.abs(ev.clientX - gx) + Math.abs(ev.clientY - gy);
+      S.cardPos[id] = { x: ox + (ev.clientX - gx), y: oy + (ev.clientY - gy) };
+      // Repositionnement immediat : ne pas attendre l'image suivante, sinon la fiche
+      // traine derriere le curseur.
+      this.placeNow();
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      head.style.cursor = 'grab';
+      if (moved < 3) delete S.cardPos[id];       // simple clic : la fiche reste ancree
+      this.sync();                                // fait apparaitre le bouton de raccrochage
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  }
+
   renderNow() {
     if (!this.renderer) return;
     const r = this.cam.rad, ph = this.cam.phi, th = this.cam.theta;
     this.camera.position.set(r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph), r * Math.sin(ph) * Math.cos(th));
     this.camera.lookAt(0, 0, 0);
     const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
-    document.querySelectorAll('[data-card-id]').forEach(el => {
-      const p = this.parts[el.getAttribute('data-card-id')];
-      if (!p) return;
-      const v = (p.anchor ? p.anchor.clone().add(p.obj.position) : p.obj.position.clone());
-      p.obj.parent.localToWorld(v);
-      v.project(this.camera);
-      const x = Math.max(352, Math.min(Math.max(360, w - 332), (v.x * 0.5 + 0.5) * w - 126));
-      const y = Math.max(78, Math.min(h - 190, (-v.y * 0.5 + 0.5) * h - 26));
-      el.style.transform = 'translate(' + x + 'px,' + y + 'px)';
-    });
+    this.placeCards(w, h);
     const L = this.LEV[this.curLevel];
     // L'echelle affichee vient de la profondeur, pas de la distance camera : celle-ci ne
     // bouge plus. curField est en µm, on le reexprime dans l'unite de la strate dominante.
@@ -1375,7 +1562,7 @@ class CelluleMusculaire extends DC.Logic {
       hostRef: this.hostRef, rootRef: this.rootRef, tipRef: this.tipRef, fadeRef: this.fadeRef,
       levelName: L.name.toUpperCase(), levelSize: L.size, levelTag: L.tag,
       goL1: () => this.goLevel(0), goL2: () => this.goLevel(1), goL3: () => this.goLevel(2),
-      reset: () => { st.cards = []; st.resetView = (st.resetView || 0) + 1; this.sync(); },
+      reset: () => { st.cards = []; st.cardPos = {}; st.resetView = (st.resetView || 0) + 1; this.sync(); },
       showRot: st.row === 'rotation', showCut: st.row === 'coupe', showSpread: st.row === 'ecart',
       rotChev: st.row === 'rotation' ? '⌄' : '›', cutChev: st.row === 'coupe' ? '⌄' : '›', spreadChev: st.row === 'ecart' ? '⌄' : '›',
       tRot: () => set('row', st.row === 'rotation' ? null : 'rotation'),
@@ -1394,7 +1581,17 @@ class CelluleMusculaire extends DC.Logic {
       setCompact: () => set('spread', 0), setExploded: () => set('spread', 1),
       cpBg: st.spread ? 'transparent' : 'rgba(240,162,115,.14)', cpBr: st.spread ? 'rgba(255,255,255,.1)' : 'rgba(240,162,115,.35)', cpFg: st.spread ? 'rgba(244,231,227,.5)' : '#ffd9c0',
       exBg: st.spread ? 'rgba(240,162,115,.14)' : 'transparent', exBr: st.spread ? 'rgba(240,162,115,.35)' : 'rgba(255,255,255,.1)', exFg: st.spread ? '#ffd9c0' : 'rgba(244,231,227,.5)',
-      cards: st.cards.map(id => Object.assign({ id, close: () => { st.cards = st.cards.filter(c => c !== id); this.sync(); } }, this.INFO[id]))
+      cards: st.cards.map(id => {
+        const pinned = !!(st.cardPos && st.cardPos[id]);
+        return Object.assign({
+          id, pinned,
+          // Liseré plus franc quand la fiche a été décrochée de son organite.
+          br: pinned ? 'rgba(240,162,115,.4)' : 'rgba(220,170,140,.16)',
+          close: () => { st.cards = st.cards.filter(c => c !== id); if (st.cardPos) delete st.cardPos[id]; this.sync(); },
+          onDrag: e => this.dragCard(e, id),
+          reanchor: () => { if (st.cardPos) delete st.cardPos[id]; this.sync(); }
+        }, this.INFO[id]);
+      })
     };
     /* Panneau des organites du niveau courant. Ferme, il se reduit a sa poignee ;
        ouvert, il deplie sa hauteur et le contenu monte en cascade. */

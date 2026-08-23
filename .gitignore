@@ -2,3 +2,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Reglages locaux de Claude Code — ne concernent pas le site
+.claude/

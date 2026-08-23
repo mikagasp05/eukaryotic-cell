@@ -346,7 +346,10 @@
   #pins { position: absolute; inset: 0; pointer-events: none; z-index: 31; overflow: hidden; }
   .pincard { position: absolute; transform: translate(-50%,-50%); width: 236px; padding: 11px 13px; border-radius: 13px;
     pointer-events: auto; color: #e9f1f8; font-family: 'IBM Plex Sans', sans-serif;
-    background: rgba(15,26,38,.9); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    /* Pas de backdrop-filter : la fiche est repositionnee a chaque image sur son
+       organite, et reechantillonner un flou d'arriere-plan a chaque fois la faisait
+       scintiller pendant la rotation. Un fond opaque rend le meme service. */
+    background: rgba(15,26,38,.96);
     border: 1px solid rgba(255,255,255,.12); box-shadow: 0 14px 40px rgba(0,0,0,.5); animation: pinIn .2s ease; }
   @keyframes pinIn { from { opacity: 0; } to { opacity: 1; } }
   .pincard .ph { display: flex; align-items: center; gap: 9px; margin-bottom: 3px; }
@@ -834,7 +837,9 @@
   /* panneau flottant sur la cellule sélectionnée */
   #cellIntroPanel { position:absolute; left:0; top:0; z-index:10; width:250px; padding:15px 17px 16px; border-radius:14px;
     transform:translate(-9999px,-9999px); opacity:0; pointer-events:none; transition:opacity .2s ease;
-    background:rgba(12,10,20,.8); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+    /* Pas de backdrop-filter : ce panneau suit la cellule survolee image par image, et
+       reechantillonner un flou d'arriere-plan a chaque fois le faisait scintiller. */
+    background:rgba(12,10,20,.95);
     border:1px solid rgba(255,255,255,.1); box-shadow:0 22px 60px rgba(0,0,0,.6); }
   #cellIntroPanel .head { display:flex; align-items:center; justify-content:space-between; }
   #cellIntroPanel .lab { font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:rgba(233,227,242,.4); }
@@ -1533,7 +1538,7 @@ window.onCellIntroChoice = window.onCellIntroChoice || function (sp) {
         const px = Math.max(56, (focus.radius * 2.7 / dist) * (r.height / (2 * Math.tan(camera.fov * Math.PI / 360))));
         reticle.style.width = px + 'px'; reticle.style.height = px + 'px';
         reticle.style.margin = (-px / 2) + 'px 0 0 ' + (-px / 2) + 'px';
-        reticle.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+        reticle.style.transform = 'translate(' + Math.round(x) + 'px, ' + Math.round(y) + 'px)';
         reticle.style.opacity = selected ? '1' : '.55';
       } else reticle.style.opacity = '0';
     } else if (mode === 'field') reticle.style.opacity = '0';
@@ -1547,9 +1552,12 @@ window.onCellIntroChoice = window.onCellIntroChoice || function (sp) {
       else {
         panel.style.opacity = '1';
         const x = (tmp.x * .5 + .5) * r.width, y = (-tmp.y * .5 + .5) * r.height;
-        const cx = Math.max(14, Math.min(r.width - 264, x - 125));
-        const cy = Math.max(14, Math.min(r.height - 230, y - 12));
-        panel.style.transform = 'translate(' + cx + 'px,' + cy + 'px)';
+        // Arrondi au pixel + ecriture seulement si la valeur a bouge : une position
+        // fractionnaire qui change a chaque image fait vibrer le texte du panneau.
+        const cx = Math.round(Math.max(14, Math.min(r.width - 264, x - 125)));
+        const cy = Math.round(Math.max(14, Math.min(r.height - 230, y - 12)));
+        const ct = 'translate(' + cx + 'px, ' + cy + 'px)';
+        if (panel.style.transform !== ct) panel.style.transform = ct;
         id('ciPanelDist').textContent = (selected.pos.length() * 3.1).toFixed(0) + ' µm';
       }
     }
