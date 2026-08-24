@@ -1449,7 +1449,20 @@ class CelluleMusculaire extends DC.Logic {
 
   placeCards(w, h) {
     const S = this.S;
-    document.querySelectorAll('[data-card-id]').forEach(el => {
+    const cards = document.querySelectorAll('[data-card-id]');
+    if (!cards.length) return;
+    /* Les matrices monde ne sont rafraichies QUE par renderer.render(), qui passe apres
+       nous dans l'image. Projeter sans les mettre a jour revenait donc a placer la fiche
+       avec la camera et les echelles de l'image PRECEDENTE : la fiche accusait un retard
+       d'une image sur le modele — mesure a une centaine de pixels pendant une rotation
+       soutenue. Ce decalage respire au gre du rythme des images, et c'est lui qu'on
+       voyait trembler ; il s'annule quand l'organite est au centre du pivot, ce qui
+       expliquait qu'un plan rapproche paraisse stable. On rafraichit donc exactement ce
+       dont la projection a besoin, comme le renderer le refera juste apres. */
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+    cards.forEach(el => {
       const id = el.getAttribute('data-card-id');
       let x, y;
       const pin = S.cardPos && S.cardPos[id];
@@ -1459,14 +1472,22 @@ class CelluleMusculaire extends DC.Logic {
         const p = this.parts[id];
         if (!p) return;
         const v = (p.anchor ? p.anchor.clone().add(p.obj.position) : p.obj.position.clone());
-        p.obj.parent.localToWorld(v);
-        v.project(this.camera);
+        const par = p.obj.parent;
+        par.updateWorldMatrix(true, false);   // chaine d'ancetres, echelle de la strate comprise
+        par.localToWorld(v);
+        v.project(cam);
         if (v.z > 1) return;                     // ancre passee derriere la camera
         x = (v.x * 0.5 + 0.5) * w - 126;
         y = (-v.y * 0.5 + 0.5) * h - 26;
       }
-      x = Math.round(Math.max(pin ? 8 : 352, Math.min(Math.max(360, w - 332), x)));
-      y = Math.round(Math.max(78, Math.min(h - 190, y)));
+      /* Bornes. Ancree, la fiche reste dans la bande centrale : elle ne doit recouvrir
+         ni la colonne des strates a gauche, ni les reglages a droite, ni le tiroir des
+         organites en bas. Deposee a la main, elle n'a plus a s'en tenir la : on ne
+         garde qu'une marge pour qu'elle ne sorte pas de l'ecran. */
+      const minX = pin ? 8 : 352, maxX = pin ? Math.max(minX, w - 260) : Math.max(360, w - 332);
+      const minY = pin ? 8 : 78, maxY = pin ? Math.max(minY, h - 60) : Math.max(minY, h - 190);
+      x = Math.round(Math.max(minX, Math.min(maxX, x)));
+      y = Math.round(Math.max(minY, Math.min(maxY, y)));
       // left/top plutot que transform : c'est ce que fait le moteur de la cellule
       // animale, dont les fiches ne tremblent pas. Une fiche deplacee par transform
       // vit sur une couche du compositeur, repeinte en parallele du canvas WebGL, et
@@ -1474,13 +1495,15 @@ class CelluleMusculaire extends DC.Logic {
       // le flux de mise en page et suit exactement le rythme de la page.
       // Hysterese de 2 px. Sans elle, une cible qui oscille autour d'un demi-pixel fait
       // osciller l'arrondi (701, 702, 701...) a chaque image : c'est du tremblement pur,
-      // pour un deplacement reel nul. La fiche ne bouge donc que si sa cible a vraiment
-      // derive. Les valeurs posees sont gardees sur l'element : une fiche recreee par un
-      // rendu n'en a pas, et se place alors d'un coup, sans transition.
-      if (!pin && el._px !== undefined && Math.abs(x - el._px) < 2 && Math.abs(y - el._py) < 2) return;
+      // pour un deplacement reel nul.
+      // Elle porte sur la CIBLE, jamais sur l'ecriture : le DOM est repare des qu'il a
+      // derive. Sans cela, un rendu du gabarit qui repose left:0;top:0 laissait la fiche
+      // collee dans le coin, la boucle estimant n'avoir rien a faire.
+      if (!pin && el._px !== undefined && Math.abs(x - el._px) < 2 && Math.abs(y - el._py) < 2) { x = el._px; y = el._py; }
       el._px = x; el._py = y;
-      el.style.left = x + 'px';
-      el.style.top = y + 'px';
+      const lx = x + 'px', ly = y + 'px';
+      if (el.style.left !== lx) el.style.left = lx;
+      if (el.style.top !== ly) el.style.top = ly;
     });
   }
 

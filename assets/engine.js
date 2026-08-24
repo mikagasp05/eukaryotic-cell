@@ -4479,7 +4479,7 @@ function pinBodyHTML(e) {
       .join(``),
     n = e.note ? `<div class="pnote">${e.note}</div>` : ``;
   return (
-    `<div class="ph"><span class="pchip" style="background:${e.chipBg};color:${e.chipBg}"></span><span class="pname">${e.title}</span><span class="pclose" data-noplace title="Fermer">✕</span></div>` +
+    `<div class="ph"><span class="pchip" style="background:${e.chipBg};color:${e.chipBg}"></span><span class="pname">${e.title}</span><span class="preanchor" data-noplace title="Raccrocher la fiche à l’organite">◎</span><span class="pclose" data-noplace title="Fermer">✕</span></div>` +
     (e.meta ? `<div class="pmeta">${e.meta}</div>` : ``) +
     t +
     n
@@ -4562,6 +4562,47 @@ function attachCutControl(card, key) {
   });
   wrap.addEventListener(`pointerdown`, (e) => e.stopPropagation());
 }
+/* Deplacement d'une fiche a la main. La fiche est centree sur son point (translate
+   -50%,-50%) : on memorise donc le CENTRE vise, que la boucle de placement reprend
+   telle quelle. Le trait de rappel, lui, continue de partir de l'organite — c'est ce
+   qui rend le decrochage lisible. Une fiche decrochee porte la classe `moved` et
+   affiche son bouton de raccrochage. */
+function attachPinDrag(card, key) {
+  let head = card.querySelector(`.ph`);
+  if (!head) return;
+  (head.addEventListener(`pointerdown`, (ev) => {
+    if (ev.target.closest(`[data-noplace]`)) return; // croix, raccrochage, curseur de coupe
+    let rec = pins.get(key);
+    if (!rec) return;
+    (ev.preventDefault(), ev.stopPropagation());
+    let r = card.getBoundingClientRect(),
+      cx = r.left + r.width / 2,
+      cy = r.top + r.height / 2,
+      gx = ev.clientX,
+      gy = ev.clientY,
+      moved = 0;
+    head.style.cursor = `grabbing`;
+    let mv = (m) => {
+      ((moved += Math.abs(m.clientX - gx) + Math.abs(m.clientY - gy)),
+        (rec.fixed = { x: cx + (m.clientX - gx), y: cy + (m.clientY - gy) }),
+        // replacement immediat : attendre l'image suivante ferait trainer la fiche
+        (card.style.left = rec.fixed.x + `px`),
+        (card.style.top = rec.fixed.y + `px`));
+    };
+    let up = () => {
+      (window.removeEventListener(`pointermove`, mv),
+        window.removeEventListener(`pointerup`, up),
+        (head.style.cursor = ``),
+        moved < 3 && (rec.fixed = null), // simple clic : la fiche reste ancree
+        card.classList.toggle(`moved`, !!rec.fixed));
+    };
+    (window.addEventListener(`pointermove`, mv), window.addEventListener(`pointerup`, up));
+  }),
+    card.querySelector(`.preanchor`).addEventListener(`pointerdown`, (ev) => {
+      let rec = pins.get(key);
+      (ev.stopPropagation(), rec && (rec.fixed = null), card.classList.remove(`moved`));
+    }));
+}
 function addPin(e) {
   let t = document.createElement(`div`);
   ((t.className = `pincard`),
@@ -4570,6 +4611,7 @@ function addPin(e) {
       (t.stopPropagation(), removePin(e.key));
     }),
     t.addEventListener(`pointerdown`, (e) => e.stopPropagation()),
+    attachPinDrag(t, e.key),
     attachCutControl(t, e.key),
     lr.appendChild(t));
   let n = document.createElementNS(ur, `line`);
@@ -5126,7 +5168,11 @@ function makeDraggable(e) {
   };
   (e.addEventListener(`pointerup`, i), e.addEventListener(`pointercancel`, i));
 }
-[`panel`, `detail`].forEach((e) => makeDraggable(document.getElementById(e)));
+/* Les panneaux de reglages restent ancres a leur coin : seules les fiches d'organites
+   se deplacent (cf. attachPinDrag), sur les trois cellules. Pouvoir tirer le HUD en
+   plus des fiches rendait le geste ambigu — on attrapait le panneau en croyant
+   attraper une fiche. makeDraggable est conserve, sans emploi pour l'instant. */
+void makeDraggable;
 var panelEl = document.getElementById(`panel`),
   Ai = document.getElementById(`menuBtn`),
   ji = document.getElementById(`panelCollapse`);
@@ -5287,8 +5333,9 @@ function tick() {
     // et une position fractionnaire la fait vibrer. On arrondit l'ancre ET la fiche.
     let i = Math.round((r.x * 0.5 + 0.5) * innerWidth),
       a = Math.round((-r.y * 0.5 + 0.5) * innerHeight),
-      o = Math.round(clamp(i + (i < innerWidth * 0.5 ? 150 : -150), 130, innerWidth - 130)),
-      s = Math.round(clamp(a - 72, 80, innerHeight - 96)),
+      // fiche decrochee : elle garde sa place, seul le trait de rappel suit l'organite
+      o = Math.round(clamp(t.fixed ? t.fixed.x : i + (i < innerWidth * 0.5 ? 150 : -150), 130, innerWidth - 130)),
+      s = Math.round(clamp(t.fixed ? t.fixed.y : a - 72, 80, innerHeight - 96)),
       c = e.labelAlpha;
     ((t.el.style.display = `block`),
       (t.el.style.opacity = c),

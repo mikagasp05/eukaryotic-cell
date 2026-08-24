@@ -160,11 +160,14 @@ a:hover{color:#8ff5e0}
     <!-- Pas de backdrop-filter : la fiche est repositionnee a chaque image, et
          reechantillonner un flou d'arriere-plan a chaque fois la faisait scintiller
          pendant la rotation. Un fond opaque rend le meme service sans l'artefact. -->
-    <div data-card-id="{{ card.id }}" style="position:absolute;left:0;top:0;z-index:5;width:252px;padding:12px 14px 13px;border-radius:9px;background:rgba(13,10,21,.96);border:1px solid rgba(255,255,255,.09);box-shadow:0 24px 60px rgba(0,0,0,.55);animation:cardIn .22s ease both">
-      <div style="display:flex;align-items:center;gap:9px">
+    <div data-card-id="{{ card.id }}" style="position:absolute;left:0;top:0;z-index:5;width:252px;padding:12px 14px 13px;border-radius:9px;background:rgba(13,10,21,.96);border:1px solid {{ card.br }};box-shadow:0 24px 60px rgba(0,0,0,.55);animation:cardIn .22s ease both">
+      <div sc-camel-on-pointer-down="{{ card.onDrag }}" style="display:flex;align-items:center;gap:9px;cursor:grab;touch-action:none">
         <div style="width:8px;height:8px;border-radius:50%;flex:none;background:{{ card.dot }}"></div>
         <div style="flex:1;font-size:13.5px;font-weight:600;color:#f2eef8">{{ card.name }}</div>
-        <div sc-camel-on-click="{{ card.close }}" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(233,227,242,.45);font-size:13px">×</div>
+        <sc-if value="{{ card.pinned }}" hint-placeholder-val="{{ false }}">
+          <div data-card-btn="1" sc-camel-on-click="{{ card.reanchor }}" title="Raccrocher la fiche à l'organite" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(110,231,207,.75);font-size:12px">&#9678;</div>
+        </sc-if>
+        <div data-card-btn="1" sc-camel-on-click="{{ card.close }}" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(233,227,242,.45);font-size:13px">×</div>
       </div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;color:rgba(233,227,242,.42);margin:3px 0 11px 17px">{{ card.sub }}</div>
       <div style="display:grid;grid-template-columns:92px 1fr;gap:7px 12px">
@@ -271,7 +274,7 @@ class CelluleVegetale extends DC.Logic {
     this.tipRef = DC.ref();
     this.fadeRef = DC.ref();
     const S = window.__cellStage || (window.__cellStage = {
-      level: 0, cards: [], row: null, odClosed: true, odFam: 0, cutNuc: 0, hidden: {},
+      level: 0, cards: [], cardPos: {}, row: null, odClosed: true, odFam: 0, cutNuc: 0, hidden: {},
       rotOn: !!p.autoRotate, rotSpeed: 0.3,
       cut: typeof p.cut === 'number' ? p.cut : 0.55,
       spread: p.spread === 'éclaté' ? 1 : 0, resetView: 0
@@ -363,7 +366,16 @@ class CelluleVegetale extends DC.Logic {
   }
   componentDidMount() {
     this.mounted = true;
-    this._onS = () => { if (this.mounted) this.forceUpdate(); };
+    // Un rendu du gabarit peut reposer le style de la fiche (son lisere change quand on
+    // la decroche) et donc effacer le left/top pose par la boucle. On replace donc dans la
+    // foulee : sans cela les fiches apparaitraient un instant en haut a gauche, et c'est ce
+    // sursaut, repete a chaque sync, qui donnait l'impression d'un clignotement.
+    this._onS = () => {
+      if (!this.mounted) return;
+      this.forceUpdate();
+      this.placeNow();
+      setTimeout(() => this.placeNow(), 0);   // au cas ou le rendu soit differe
+    };
     window.addEventListener('cell:state', this._onS);
     this.waitLib();
   }
@@ -1534,7 +1546,7 @@ class CelluleVegetale extends DC.Logic {
     // (le garde `moved < 6` en amont fait qu'une rotation ne passe pas par ici)
     if (!id || !this.INFO[id]) {
       if (!S.cards.length) return;
-      S.cards = [];
+      S.cards = []; S.cardPos = {};
       this.sync();
       return;
     }
@@ -1565,7 +1577,7 @@ class CelluleVegetale extends DC.Logic {
     if (n < 0 || n >= this.V.length) return;
     // On vise la profondeur de la strate ; la plongee s'y rend en continu.
     this.depthTarget = Math.log10(this.fieldTop / this.V[n]);
-    this.S.cards = [];
+    this.S.cards = []; this.S.cardPos = {};
     this.sync();
   }
 
@@ -1621,7 +1633,7 @@ class CelluleVegetale extends DC.Logic {
     if (dom !== this.curLevel) {
       this.curLevel = dom;
       this.S.level = dom;
-      this.S.cards = [];
+      this.S.cards = []; this.S.cardPos = {};   // on change d'echelle : les fiches de l'ancienne n'ont plus de sens
       this.setHover(null);
       this.applyCut();
       this.sync();
@@ -1659,36 +1671,112 @@ class CelluleVegetale extends DC.Logic {
     }
   }
 
+  /* Placement des fiches. Trois garde-fous contre le clignotement observe pendant la
+     rotation :
+       - derriere la camera, project() renvoie un point MIROIR (v.z > 1). La fiche
+         sautait alors d'un bord a l'autre a chaque image : on garde la derniere
+         position valable au lieu de la suivre ;
+       - les coordonnees sont arrondies au pixel, sinon le sous-pixel fait vibrer le
+         texte a chaque image ;
+       - hysterese de 2 px sur la CIBLE : une cible qui oscille autour d'un demi-pixel
+         ferait osciller l'arrondi a chaque image (701, 702, 701...) — du tremblement
+         pur, pour un deplacement reel nul.
+     L'hysterese porte sur la cible, jamais sur l'ecriture : le DOM est repare des qu'il
+     a derive. Sans cela, un rendu du gabarit qui repose left:0;top:0 laissait la fiche
+     collee dans le coin, la boucle estimant n'avoir rien a faire.
+     Une fiche deplacee a la main (S.cardPos) ne suit plus l'ancre du tout. */
+  placeNow() {
+    if (!this.renderer || !this.mounted) return;
+    this.placeCards(this.renderer.domElement.clientWidth, this.renderer.domElement.clientHeight);
+  }
+
+  placeCards(w, h) {
+    const S = this.S;
+    const cards = document.querySelectorAll('[data-card-id]');
+    if (!cards.length) return;
+    /* Les matrices monde ne sont rafraichies QUE par renderer.render(), qui passe apres
+       nous dans l'image. Projeter sans les mettre a jour revenait donc a placer la fiche
+       avec la camera et les echelles de l'image PRECEDENTE : la fiche accusait un retard
+       d'une image sur le modele — mesure a une centaine de pixels pendant une rotation
+       soutenue. Ce decalage respire au gre du rythme des images, et c'est lui qu'on
+       voyait trembler ; il s'annule quand l'organite est au centre du pivot, ce qui
+       expliquait qu'un plan rapproche paraisse stable. On rafraichit donc exactement ce
+       dont la projection a besoin, comme le renderer le refera juste apres. */
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+    cards.forEach(el => {
+      const id = el.getAttribute('data-card-id');
+      const pin = S.cardPos && S.cardPos[id];
+      let x, y;
+      if (pin) {
+        x = pin.x; y = pin.y;
+      } else {
+        const p = this.parts[id];
+        if (!p) return;
+        const v = (p.anchor ? p.anchor.clone().add(p.obj.position) : p.obj.position.clone());
+        const par = p.obj.parent;
+        par.updateWorldMatrix(true, false);   // chaine d'ancetres, echelle de la strate comprise
+        par.localToWorld(v);
+        v.project(cam);
+        if (v.z > 1) return;                   // ancre passee derriere la camera
+        x = (v.x * 0.5 + 0.5) * w - 126;
+        y = (-v.y * 0.5 + 0.5) * h - 26;
+      }
+      /* Bornes. Ancree, la fiche reste dans la bande centrale : elle ne doit recouvrir
+         ni la colonne des strates a gauche, ni les reglages a droite, ni le tiroir des
+         organites en bas. Deposee a la main, elle n'a plus a s'en tenir la : on ne
+         garde qu'une marge pour qu'elle ne sorte pas de l'ecran. */
+      const minX = pin ? 8 : 352, maxX = pin ? Math.max(minX, w - 260) : Math.max(360, w - 332);
+      const minY = pin ? 8 : 78, maxY = pin ? Math.max(minY, h - 60) : Math.max(minY, h - 190);
+      x = Math.round(Math.max(minX, Math.min(maxX, x)));
+      y = Math.round(Math.max(minY, Math.min(maxY, y)));
+      if (!pin && el._px !== undefined && Math.abs(x - el._px) < 2 && Math.abs(y - el._py) < 2) { x = el._px; y = el._py; }
+      el._px = x; el._py = y;
+      const lx = x + 'px', ly = y + 'px';
+      if (el.style.left !== lx) el.style.left = lx;
+      if (el.style.top !== ly) el.style.top = ly;
+    });
+  }
+
+  /* Deplacement d'une fiche a la souris. Seules les fiches sont concernees : les
+     panneaux de reglage du HUD restent ancres a leur coin. */
+  dragCard(e, id) {
+    if (e.target && e.target.closest && e.target.closest('[data-card-btn]')) return;   // croix / raccrochage
+    const el = e.currentTarget.closest('[data-card-id]');
+    if (!el) return;
+    e.preventDefault(); e.stopPropagation();
+    const S = this.S;
+    S.cardPos = S.cardPos || {};
+    const par = el.offsetParent || el.parentNode;
+    const pr = par.getBoundingClientRect(), er = el.getBoundingClientRect();
+    const ox = er.left - pr.left, oy = er.top - pr.top, gx = e.clientX, gy = e.clientY;
+    const head = e.currentTarget;
+    head.style.cursor = 'grabbing';
+    let moved = 0;
+    const move = ev => {
+      moved += Math.abs(ev.clientX - gx) + Math.abs(ev.clientY - gy);
+      S.cardPos[id] = { x: ox + (ev.clientX - gx), y: oy + (ev.clientY - gy) };
+      // Repositionnement immediat : ne pas attendre l'image suivante, sinon la fiche
+      // traine derriere le curseur.
+      this.placeNow();
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      head.style.cursor = 'grab';
+      if (moved < 3) delete S.cardPos[id];     // simple clic : la fiche reste ancree
+      this.sync();                             // fait apparaitre le bouton de raccrochage
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  }
+
   renderNow() {
     if (!this.renderer) return;
     const r = this.cam.rad, ph = this.cam.phi, th = this.cam.theta;
     this.camera.position.set(r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph), r * Math.sin(ph) * Math.cos(th));
     this.camera.lookAt(0, 0, 0);
     const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
-    document.querySelectorAll('[data-card-id]').forEach(el => {
-      const p = this.parts[el.getAttribute('data-card-id')];
-      if (!p) return;
-      const v = (p.anchor ? p.anchor.clone().add(p.obj.position) : p.obj.position.clone());
-      p.obj.parent.localToWorld(v);
-      v.project(this.camera);
-      if (v.z > 1) return;                     // ancre passee derriere la camera : on ne suit pas le point miroir
-      // Arrondi au pixel : une position fractionnaire qui change a chaque image fait
-      // vibrer le texte de la fiche. On n'ecrit que si la valeur a bouge, pour ne pas
-      // reinvalider la couche 60 fois par seconde pour rien.
-      const x = Math.round(Math.max(352, Math.min(Math.max(360, w - 332), (v.x * 0.5 + 0.5) * w - 126)));
-      const y = Math.round(Math.max(78, Math.min(h - 190, (-v.y * 0.5 + 0.5) * h - 26)));
-      // left/top plutot que transform : c'est ce que fait le moteur de la cellule
-      // animale, dont les fiches ne tremblent pas. Une fiche deplacee par transform
-      // vit sur une couche du compositeur, repeinte en parallele du canvas WebGL, et
-      // les deux se desynchronisent pendant la rotation.
-      // Hysterese de 2 px : sans elle, une cible qui oscille autour d'un demi-pixel fait
-      // osciller l'arrondi a chaque image (701, 702, 701...) — du tremblement pur, pour
-      // un deplacement reel nul.
-      if (el._px !== undefined && Math.abs(x - el._px) < 2 && Math.abs(y - el._py) < 2) return;
-      el._px = x; el._py = y;
-      el.style.left = x + 'px';
-      el.style.top = y + 'px';
-    });
+    this.placeCards(w, h);
     const L = this.LEV[this.curLevel];
     // L'echelle vient de la profondeur, pas de la distance camera : elle ne bouge plus.
     const val = L.unit === 'nm' ? this.curField * 1000 : this.curField;
@@ -1783,7 +1871,7 @@ class CelluleVegetale extends DC.Logic {
       hostRef: this.hostRef, rootRef: this.rootRef, tipRef: this.tipRef, fadeRef: this.fadeRef,
       levelName: L.name.toUpperCase(), levelSize: L.size, levelTag: L.tag,
       goL1: () => this.goLevel(0), goL2: () => this.goLevel(1), goL3: () => this.goLevel(2),
-      reset: () => { st.cards = []; st.resetView = (st.resetView || 0) + 1; this.sync(); },
+      reset: () => { st.cards = []; st.cardPos = {}; st.resetView = (st.resetView || 0) + 1; this.sync(); },
       showRot: st.row === 'rotation', showCut: st.row === 'coupe', showSpread: st.row === 'ecart',
       rotChev: st.row === 'rotation' ? '⌄' : '›', cutChev: st.row === 'coupe' ? '⌄' : '›', spreadChev: st.row === 'ecart' ? '⌄' : '›',
       tRot: () => set('row', st.row === 'rotation' ? null : 'rotation'),
@@ -1807,7 +1895,15 @@ class CelluleVegetale extends DC.Logic {
       cpBg: st.spread ? 'transparent' : 'rgba(94,234,212,.14)', cpBr: st.spread ? 'rgba(255,255,255,.1)' : 'rgba(94,234,212,.35)', cpFg: st.spread ? 'rgba(233,227,242,.5)' : '#bff3e6',
       exBg: st.spread ? 'rgba(94,234,212,.14)' : 'transparent', exBr: st.spread ? 'rgba(94,234,212,.35)' : 'rgba(255,255,255,.1)', exFg: st.spread ? '#bff3e6' : 'rgba(233,227,242,.5)',
       cards: st.cards.map(id => {
-        const c = Object.assign({ id, close: () => { st.cards = st.cards.filter(c2 => c2 !== id); this.sync(); } }, this.INFO[id]);
+        const pinned = !!(st.cardPos && st.cardPos[id]);
+        const c = Object.assign({
+          id, pinned,
+          // Lisere plus franc quand la fiche a ete decrochee de son organite.
+          br: pinned ? 'rgba(110,231,207,.4)' : 'rgba(255,255,255,.09)',
+          close: () => { st.cards = st.cards.filter(c2 => c2 !== id); if (st.cardPos) delete st.cardPos[id]; this.sync(); },
+          onDrag: e => this.dragCard(e, id),
+          reanchor: () => { if (st.cardPos) delete st.cardPos[id]; this.sync(); }
+        }, this.INFO[id]);
         // La membrane commande la coupe de la cellule, l'enveloppe nucleaire celle du
         // noyau. Aucun autre organite n'en porte : c'est la regle de la cellule animale.
         const key = id === 'membrane' ? 'cut' : id === 'noyau' ? 'cutNuc' : null;

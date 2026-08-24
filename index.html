@@ -352,7 +352,15 @@
     background: rgba(15,26,38,.96);
     border: 1px solid rgba(255,255,255,.12); box-shadow: 0 14px 40px rgba(0,0,0,.5); animation: pinIn .2s ease; }
   @keyframes pinIn { from { opacity: 0; } to { opacity: 1; } }
-  .pincard .ph { display: flex; align-items: center; gap: 9px; margin-bottom: 3px; }
+  /* la barre de titre sert de poignee : la fiche se decroche de son organite et se
+     pose ou l'on veut, le trait de rappel continuant de la relier a lui. */
+  .pincard .ph { display: flex; align-items: center; gap: 9px; margin-bottom: 3px;
+    cursor: grab; touch-action: none; }
+  .pincard.moved { border-color: rgba(127,227,210,.42); }
+  .pincard .preanchor { display: none; opacity: .75; font-size: 12px; line-height: 1;
+    cursor: pointer; padding: 2px 3px; flex: 0 0 auto; color: var(--teal-alt); }
+  .pincard.moved .preanchor { display: block; }
+  .pincard .preanchor:hover { opacity: 1; }
   .pincard .pchip { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 9px currentColor; }
   .pincard .pname { font-size: 13.5px; font-weight: 600; flex: 1; line-height: 1.2; }
   .pincard .pclose { opacity: .5; font-size: 13px; line-height: 1; cursor: pointer; padding: 2px 3px; flex: 0 0 auto; }

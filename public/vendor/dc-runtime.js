@@ -97,7 +97,15 @@
       const v = evaluate(raw, scope);
       if (name === 'value') { const nv = v == null ? '' : v; if (el.value !== nv) el.value = nv; continue; }
       const sv = v == null ? '' : String(v);
-      if (el.getAttribute(name) !== sv) el.setAttribute(name, sv);
+      /* On compare a ce que le RUNTIME a ecrit la derniere fois, pas a l'etat du DOM.
+         La boucle de rendu pose `left`/`top` sur les fiches ; relire l'attribut `style`
+         le trouvait donc toujours different du gabarit, et chaque sync() le reecrivait
+         par-dessus — la fiche repartait a `left:0;top:0`, c'est-a-dire dans le coin
+         haut-gauche, des qu'on touchait un reglage ou qu'on ouvrait une autre fiche.
+         Avec cette memoire, un gabarit inchange ne touche plus a rien et les positions
+         posees a la main survivent au rendu. */
+      const wrote = el.__dcAttr || (el.__dcAttr = {});
+      if (wrote[name] !== sv) { el.setAttribute(name, sv); wrote[name] = sv; }
     }
   }
 
