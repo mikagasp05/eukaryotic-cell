@@ -23,6 +23,11 @@
 
   const ref = () => ({ current: null });
 
+  // Les gabarits portent des icônes SVG (l'œil des cartes d'organites). Un
+  // `createElement('svg')` fabrique un élément HTML inconnu, invisible : tout ce
+  // sous-arbre doit naître dans l'espace de noms SVG.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
   /* --- lecture d'un chemin pointé dans le scope courant ------------------ */
   function lookup(scope, path) {
     const parts = path.split('.');
@@ -167,7 +172,9 @@
       return;
     }
 
-    const el = place(parent, cur, path + 'e' + tplId(node), () => document.createElement(tag));
+    const svg = tag === 'svg' || (parent.namespaceURI === SVG_NS && tag !== 'foreignobject');
+    const el = place(parent, cur, path + 'e' + tplId(node),
+      () => svg ? document.createElementNS(SVG_NS, node.tagName) : document.createElement(tag));
     applyAttrs(el, node, scope);
     const inner = { i: 0 };
     kids(node, scope, el, inner, '');

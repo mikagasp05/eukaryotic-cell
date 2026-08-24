@@ -4159,6 +4159,47 @@ function orgItemPinKey(item) {
   let obj = Dn(tier, item[3], item[0]);
   return obj ? `cellule|` + (obj.userData.structure || item[0]) + `|` : null;
 }
+/* ---------------------------------------------------------------------------
+   ORGANITES ÉTEINTS
+   L'œil d'une carte range la clé de structure de son organite dans orgHidden, et
+   TOUS les objets qui portent cette structure cessent d'être rendus — le RE, les
+   lysosomes ou les vésicules en comptent plusieurs, l'un ne va pas sans l'autre.
+   La fiche éventuellement ouverte sur l'organite se referme avec lui.
+   -------------------------------------------------------------------------- */
+var orgHidden = new Set(),
+  orgResetEl = document.getElementById(`odReset`);
+// œil ouvert / barré, dans le trait des autres icônes du HUD
+function orgEyeSVG(off) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.7-6.3 10-6.3S22 12 22 12s-3.7 6.3-10 6.3S2 12 2 12Z"/><circle cx="12" cy="12" r="2.7"/>${off ? `<path d="M4 4 20 20"/>` : ``}</svg>`;
+}
+function orgApplyHidden(key) {
+  let tier = orgCellTier();
+  if (!tier || !tier.group) return;
+  let off = orgHidden.has(key);
+  tier.group.traverse((o) => {
+    o.userData && o.userData.structure === key && (o.visible = !off);
+  });
+  if (off) for (let k of [...pins.keys()]) k.startsWith(`cellule|` + key + `|`) && removePin(k);
+}
+function orgSyncReset() {
+  orgResetEl && (orgResetEl.hidden = orgHidden.size === 0);
+}
+function orgToggleHidden(key) {
+  if (!key) return;
+  (orgHidden.has(key) ? orgHidden.delete(key) : orgHidden.add(key),
+    orgApplyHidden(key),
+    orgSyncReset(),
+    renderOrgGrid());
+}
+function orgShowAll() {
+  let keys = [...orgHidden];
+  (orgHidden.clear(), keys.forEach(orgApplyHidden), orgSyncReset(), renderOrgGrid());
+}
+// le raycaster de three ignore `visible` : à nous d'écarter les objets éteints
+function orgObjShown(o) {
+  for (let n = o; n; n = n.parent) if (n.visible === !1) return !1;
+  return !0;
+}
 function renderOrgGrid() {
   let comps = SCALE_COMPS.cellule,
     tier = orgCellTier(),
@@ -4169,11 +4210,17 @@ function renderOrgGrid() {
     fam.idx.forEach((idx, k) => {
       let item = comps.items[idx],
         key = tier ? orgItemPinKey(item) : null,
-        b = document.createElement(`button`);
-      ((b.type = `button`),
-        (b.className = `odCard`),
-        b.style.setProperty(`--i`, String(k)), // rang dans la cascade d'ouverture
-        b.setAttribute(`aria-pressed`, key && pinned && pinned.has(key) ? `true` : `false`),
+        struct = item[3],
+        off = orgHidden.has(struct),
+        isPinned = !!(key && pinned && pinned.has(key)),
+        card = document.createElement(`div`),
+        b = document.createElement(`button`),
+        eye = document.createElement(`button`);
+      ((card.className = `odCard` + (isPinned ? ` pinned` : ``) + (off ? ` off` : ``)),
+        card.style.setProperty(`--i`, String(k)), // rang dans la cascade d'ouverture
+        (b.type = `button`),
+        (b.className = `odPick`),
+        b.setAttribute(`aria-pressed`, isPinned ? `true` : `false`),
         (b.innerHTML = `<span class="odName"><span class="odDot" style="background:${item[2]}"></span><span></span></span><span class="odRes"></span>`),
         (b.querySelector(`.odName span:last-child`).textContent = item[0]),
         (b.querySelector(`.odRes`).textContent = item[1]),
@@ -4182,7 +4229,18 @@ function renderOrgGrid() {
           if (!t) return;
           (Dn(t, item[3], item[0]) ? jn(`cellule`, item[3], item[0]) : pinScaleItem(t, item, idx), renderOrgGrid());
         }),
-        orgGridEl.appendChild(b));
+        (eye.type = `button`),
+        (eye.className = `odEye`),
+        eye.setAttribute(`aria-pressed`, off ? `true` : `false`),
+        (eye.title = (off ? `Réafficher ` : `Masquer `) + item[0]),
+        eye.setAttribute(`aria-label`, eye.title),
+        (eye.innerHTML = orgEyeSVG(off)),
+        eye.addEventListener(`click`, (e) => {
+          (e.stopPropagation(), orgToggleHidden(struct));
+        }),
+        card.appendChild(b),
+        card.appendChild(eye),
+        orgGridEl.appendChild(card));
     }));
 }
 /* noms courts : la rangée de familles doit tenir sur une seule ligne dans le tiroir */
@@ -4213,7 +4271,8 @@ function renderOrgFams() {
     }));
 }
 if (orgDrawerEl) {
-  (renderOrgFams(),
+  (orgResetEl && orgResetEl.addEventListener(`click`, orgShowAll),
+    renderOrgFams(),
     renderOrgGrid(),
     // fermé au départ, avec l'invite qui respire tant qu'on ne l'a jamais ouvert
     orgDrawerEl.classList.add(`closed`, `pristine`),
@@ -4347,7 +4406,7 @@ function ir(e) {
 }
 function ar() {
   let e = [];
-  for (let t of TIERS) if (t.alpha > 0.2) for (let n of t.pickables) e.push(n);
+  for (let t of TIERS) if (t.alpha > 0.2) for (let n of t.pickables) (orgHidden.size && !orgObjShown(n)) || e.push(n);
   if (!e.length) return null;
   raycaster.setFromCamera(pointer, camera);
   let t = raycaster.intersectObjects(e, !1);
@@ -4390,7 +4449,9 @@ var ur = `http://www.w3.org/2000/svg`,
 function fr() {
   let e = new Map(),
     t = [];
-  for (let n of TIERS) if (n.alpha > 0.2) for (let r of n.pickables) (t.push(r), e.set(r, n));
+  for (let n of TIERS)
+    if (n.alpha > 0.2)
+      for (let r of n.pickables) (orgHidden.size && !orgObjShown(r)) || (t.push(r), e.set(r, n));
   if (!t.length) return null;
   raycaster.setFromCamera(pointer, camera);
   let n = raycaster.intersectObjects(t, !1);

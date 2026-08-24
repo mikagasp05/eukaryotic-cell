@@ -209,7 +209,12 @@ a:hover{color:#8ff5e0}
         <div style="display:flex;flex-direction:column;gap:12px;padding-top:2px;opacity:{{ odInnerOp }};transition:opacity .22s ease">
           <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px">
             <div style="font:400 9px/1.3 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.22em;text-transform:uppercase;color:rgba(160,200,220,.6)">Organites {{ odScope }}</div>
-            <div style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:rgba(160,200,220,.4)">cliquer = isoler</div>
+            <div style="display:flex;align-items:baseline;gap:12px">
+              <sc-if value="{{ odAnyHidden }}">
+                <div sc-camel-on-click="{{ odShowAll }}" title="Réafficher tous les organites masqués" style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:#6ee7cf;cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px">tout réafficher</div>
+              </sc-if>
+              <div style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:rgba(160,200,220,.4)">cliquer = isoler · œil = masquer</div>
+            </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <sc-for list="{{ odFams }}" as="fam" hint-placeholder-count="3">
@@ -223,10 +228,17 @@ a:hover{color:#8ff5e0}
             <sc-for list="{{ odItems }}" as="org" hint-placeholder-count="3">
               <div sc-camel-on-click="{{ org.pick }}" style="padding:10px 11px;border-radius:9px;cursor:pointer;background:{{ org.bg }};border:1px solid rgba(140,195,220,.14);display:flex;flex-direction:column;gap:4px;animation:odRise .46s cubic-bezier(.22,.9,.24,1) both;animation-delay:{{ org.delay }};transition:background .18s,border-color .18s">
                 <div style="display:flex;align-items:center;gap:6px">
-                  <div style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ org.dot }}"></div>
-                  <div style="font:500 11.5px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:#eef4fa">{{ org.name }}</div>
+                  <div style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ org.dot }};opacity:{{ org.txOp }}"></div>
+                  <div style="font:500 11.5px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:#eef4fa;flex:1;min-width:0;opacity:{{ org.txOp }}">{{ org.name }}</div>
+                  <div sc-camel-on-click="{{ org.toggle }}" title="{{ org.eyeTitle }}" style="flex:none;width:21px;height:21px;margin:-3px -4px -1px 0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:{{ org.eyeFg }};background:{{ org.eyeBg }};transition:color .16s,background .16s">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 12s3.7-6.3 10-6.3S22 12 22 12s-3.7 6.3-10 6.3S2 12 2 12Z"/>
+                      <circle cx="12" cy="12" r="2.7"/>
+                      <path d="M4 4 20 20" opacity="{{ org.slash }}"/>
+                    </svg>
+                  </div>
                 </div>
-                <div style="font:400 10.5px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:rgba(214,235,246,.7)">{{ org.sub }}</div>
+                <div style="font:400 10.5px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:rgba(214,235,246,.7);opacity:{{ org.txOp }}">{{ org.sub }}</div>
               </div>
             </sc-for>
           </div>
@@ -259,7 +271,7 @@ class CelluleVegetale extends DC.Logic {
     this.tipRef = DC.ref();
     this.fadeRef = DC.ref();
     const S = window.__cellStage || (window.__cellStage = {
-      level: 0, cards: [], row: null, odClosed: true, odFam: 0, cutNuc: 0,
+      level: 0, cards: [], row: null, odClosed: true, odFam: 0, cutNuc: 0, hidden: {},
       rotOn: !!p.autoRotate, rotSpeed: 0.3,
       cut: typeof p.cut === 'number' ? p.cut : 0.55,
       spread: p.spread === 'éclaté' ? 1 : 0, resetView: 0
@@ -686,8 +698,13 @@ class CelluleVegetale extends DC.Logic {
     const Oc = { rx: O.rx * 1.014, ry: O.ry * 1.014, rz: O.rz, n: O.n }, Ic = { rx: I.rx * 0.985, ry: I.ry * 0.985, rz: I.rz, n: I.n };
     const cap = new T.Mesh(this.capGeom(Oc, Ic, this.cutZ(0)), this.mat(0xd3e295, { side: T.DoubleSide, roughness: 0.78 }));
     this.capRec[0] = { mesh: cap, O: Oc, I: Ic };
-    g.add(wall, wallIn, cyto, cap);
-    this.reg(0, 'paroi', wall, { fixed: true, anchor: new T.Vector3(-1.2, 1.15, 0.4) });
+    // La paroi tient en un seul corps : lamelle externe, lamelle interne et face de
+    // coupe. Sans ce regroupement, l'œil de la carte « paroi » n'éteindrait que la
+    // couche externe et la paroi semblerait toujours là.
+    const wallG = new T.Group();
+    wallG.add(wall, wallIn);
+    g.add(cyto, this.reg(0, 'paroi', wallG, { fixed: true, anchor: new T.Vector3(-1.2, 1.15, 0.4) }));
+    wallG.add(cap);   // attachée après l'enregistrement : elle s'éteint avec la paroi sans devenir cliquable
     g.add(this.reg(0, 'microfibrille', fib, { fixed: true, anchor: new T.Vector3(0.6, 1.3, 0.5) }));
     g.add(this.reg(0, 'membrane', membG, { fixed: true, anchor: new T.Vector3(1.35, 1.0, 0.35) }));
 
@@ -1484,8 +1501,12 @@ class CelluleVegetale extends DC.Logic {
     this.ray.setFromCamera({ x: this.ptr.x, y: this.ptr.y }, this.camera);
     const hits = this.ray.intersectObjects(this.pick[this.curLevel], true);
     const clip = this.LEV[this.curLevel].clip;
+    // Le raycaster de three ignore `visible` : c'est ici qu'on écarte les organites
+    // éteints, sinon ils resteraient survolables et cliquables dans le vide.
+    const hid = this.S.hidden || {};
     for (let i = 0; i < hits.length; i++) {
       const obj = hits[i].object;
+      if (hid[obj.userData.oid]) continue;
       // On teste contre le plan qui decoupe REELLEMENT cet objet, pas contre celui de
       // la cellule. Sans ca le noyau, qui suit nucPlane et reste entier, voyait ses
       // points rejetes comme « derriere la coupe » : il n'etait plus cliquable.
@@ -1607,9 +1628,22 @@ class CelluleVegetale extends DC.Logic {
     }
   }
 
+  /* Organites éteints : l'œil d'une carte pose son identifiant dans S.hidden, et
+     l'objet 3D correspondant cesse d'être rendu. On réapplique à chaque passe
+     plutôt que de mémoriser un delta — une vingtaine de booléens, et l'état reste
+     vrai même après un changement de strate ou un remontage de la page. */
+  applyHidden() {
+    const hid = this.S.hidden || (this.S.hidden = {});
+    for (const id in this.parts) {
+      const p = this.parts[id];
+      if (p && p.obj) p.obj.visible = !hid[id];
+    }
+  }
+
   applyStage(fromLoop) {
     const S = this.S;
     if (!this.renderer) return;
+    this.applyHidden();
     if (S.cut !== this.appliedCut || S.cutNuc !== this.appliedCutNuc) {
       this.appliedCut = S.cut; this.appliedCutNuc = S.cutNuc; this.applyCut();
     }
@@ -1800,6 +1834,9 @@ class CelluleVegetale extends DC.Logic {
        ouvert, il déplie sa hauteur et le contenu monte en cascade. */
     const fams = this.FAMS[lv] || [], famI = Math.min(st.odFam || 0, Math.max(0, fams.length - 1));
     const shut = !!st.odClosed;
+    const hid = st.hidden || (st.hidden = {});
+    V.odAnyHidden = Object.keys(hid).length > 0;
+    V.odShowAll = () => { st.hidden = {}; this.applyHidden(); this.sync(); };
     ((V.odScope = this.SCOPE[lv] || 'de ce niveau'),
       (V.odWidth = shut ? '470px' : 'min(700px, calc(100% - 120px))'),
       (V.odPadBottom = shut ? '0px' : '22px'),
@@ -1819,14 +1856,32 @@ class CelluleVegetale extends DC.Logic {
         delay: (0.08 + i * 0.035).toFixed(3) + 's',
         pick: () => { st.odFam = i; this.sync(); }
       }))),
-      (V.odItems = ((fams[famI] || { ids: [] }).ids).filter(id => this.INFO[id]).map((id, i) => ({
-        name: this.INFO[id].name,
-        sub: this.INFO[id].sub,
-        dot: this.INFO[id].dot,
-        bg: st.cards.indexOf(id) >= 0 ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.04)',
-        delay: (0.16 + i * 0.04).toFixed(3) + 's',
-        pick: () => { st.cards = st.cards.filter(c => c !== id).concat([id]).slice(-3); this.sync(); }
-      }))));
+      (V.odItems = ((fams[famI] || { ids: [] }).ids).filter(id => this.INFO[id]).map((id, i) => {
+        const off = !!hid[id];
+        return {
+          name: this.INFO[id].name,
+          sub: this.INFO[id].sub,
+          dot: this.INFO[id].dot,
+          bg: st.cards.indexOf(id) >= 0 ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.04)',
+          delay: (0.16 + i * 0.04).toFixed(3) + 's',
+          // éteint : la carte s'efface, mais son œil reste net pour la rallumer
+          txOp: off ? '.4' : '1',
+          slash: off ? '1' : '0',
+          eyeFg: off ? '#6ee7cf' : 'rgba(214,235,246,.45)',
+          eyeBg: off ? 'rgba(110,231,207,.14)' : 'transparent',
+          eyeTitle: (off ? 'Réafficher ' : 'Masquer ') + this.INFO[id].name,
+          pick: () => { st.cards = st.cards.filter(c => c !== id).concat([id]).slice(-3); this.sync(); },
+          // l'œil est posé DANS la carte : sans cette coupure, le clic ouvrirait
+          // aussi la fiche de l'organite qu'on vient d'éteindre.
+          toggle: e => {
+            if (e) e.stopPropagation();
+            if (hid[id]) delete hid[id];
+            else { hid[id] = true; st.cards = st.cards.filter(c => c !== id); }
+            this.applyHidden();
+            this.sync();
+          }
+        };
+      })));
     [0, 1, 2].forEach(i => {
       const a = lv === i, k = i + 1;
       V['n' + k] = a ? '#5eead4' : 'rgba(233,227,242,.4)';

@@ -178,7 +178,12 @@ a:hover{color:#ffc9a8}
         <div style="display:flex;flex-direction:column;gap:12px;padding-top:2px;opacity:{{ odInnerOp }};transition:opacity .22s ease">
           <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px">
             <div style="font:400 9px/1.3 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.22em;text-transform:uppercase;color:rgba(228,196,178,.6)">Organites {{ odScope }}</div>
-            <div style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:rgba(228,196,178,.4)">cliquer = isoler</div>
+            <div style="display:flex;align-items:baseline;gap:12px">
+              <sc-if value="{{ odAnyHidden }}">
+                <div onClick="{{ odShowAll }}" title="Réafficher tous les organites masqués" style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:#f0a273;cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px">tout réafficher</div>
+              </sc-if>
+              <div style="font:400 9.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:rgba(228,196,178,.4)">cliquer = isoler · œil = masquer</div>
+            </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <sc-for list="{{ odFams }}" as="fam" hint-placeholder-count="3">
@@ -192,10 +197,17 @@ a:hover{color:#ffc9a8}
             <sc-for list="{{ odItems }}" as="org" hint-placeholder-count="3">
               <div onClick="{{ org.pick }}" style="padding:10px 11px;border-radius:9px;cursor:pointer;background:{{ org.bg }};border:1px solid rgba(220,170,140,.16);display:flex;flex-direction:column;gap:4px;animation:odRise .46s cubic-bezier(.22,.9,.24,1) both;animation-delay:{{ org.delay }};transition:background .18s,border-color .18s">
                 <div style="display:flex;align-items:center;gap:6px">
-                  <div style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ org.dot }}"></div>
-                  <div style="font:500 11.5px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:#f9ece7">{{ org.name }}</div>
+                  <div style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ org.dot }};opacity:{{ org.txOp }}"></div>
+                  <div style="font:500 11.5px/1.2 'IBM Plex Sans',system-ui,sans-serif;color:#f9ece7;flex:1;min-width:0;opacity:{{ org.txOp }}">{{ org.name }}</div>
+                  <div onClick="{{ org.toggle }}" title="{{ org.eyeTitle }}" style="flex:none;width:21px;height:21px;margin:-3px -4px -1px 0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:{{ org.eyeFg }};background:{{ org.eyeBg }};transition:color .16s,background .16s">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 12s3.7-6.3 10-6.3S22 12 22 12s-3.7 6.3-10 6.3S2 12 2 12Z"/>
+                      <circle cx="12" cy="12" r="2.7"/>
+                      <path d="M4 4 20 20" opacity="{{ org.slash }}"/>
+                    </svg>
+                  </div>
                 </div>
-                <div style="font:400 10.5px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:rgba(244,231,227,.7)">{{ org.sub }}</div>
+                <div style="font:400 10.5px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:rgba(244,231,227,.7);opacity:{{ org.txOp }}">{{ org.sub }}</div>
               </div>
             </sc-for>
           </div>
@@ -238,7 +250,7 @@ class CelluleMusculaire extends DC.Logic {
     this.tipRef = DC.ref();
     this.fadeRef = DC.ref();
     const S = window.__musStage || (window.__musStage = {
-      level: 0, cards: [], cardPos: {}, row: null, odClosed: true, odFam: 0,   // aucun reglage deplie au demarrage
+      level: 0, cards: [], cardPos: {}, row: null, odClosed: true, odFam: 0, hidden: {},   // aucun reglage deplie au demarrage
       rotOn: !!p.autoRotate, rotSpeed: 0.3,
       cut: typeof p.cut === 'number' ? p.cut : 0.55,
       spread: p.spread === 'éclaté' ? 1 : 0, resetView: 0
@@ -678,7 +690,9 @@ class CelluleMusculaire extends DC.Logic {
     const Oc = { rx: O.rx * 1.002, ry: O.ry * 1.012, rz: O.rz, n: O.n }, Ic = { rx: I.rx * 0.996, ry: I.ry * 0.99, rz: I.rz, n: I.n };
     const cap = new T.Mesh(this.capGeom(Oc, Ic, this.cutZ(0)), this.mat(0xdcae86, { side: T.DoubleSide, roughness: 0.8 }));
     this.capRec[0] = { mesh: cap, O: Oc, I: Ic };
-    g.add(cap);
+    // La face de coupe appartient au sarcolemme : elle s'eteint avec lui. Attachee
+    // apres l'enregistrement, elle ne devient pas cliquable pour autant.
+    this.parts.sarcolemme.obj.add(cap);
 
     /* myofibrilles : réseau de rondins striés (bandes A / I / stries Z) */
     const sp = 0.375, mf = [];
@@ -1272,8 +1286,12 @@ class CelluleMusculaire extends DC.Logic {
     this.ray.setFromCamera({ x: this.ptr.x, y: this.ptr.y }, this.camera);
     const hits = this.ray.intersectObjects(this.pick[this.curLevel], true);
     const clip = this.LEV[this.curLevel].clip;
+    // Le raycaster de three ignore `visible` : c'est ici qu'on ecarte les organites
+    // eteints, sinon ils resteraient survolables et cliquables dans le vide.
+    const hid = this.S.hidden || {};
     for (let i = 0; i < hits.length; i++) {
       if (clip && this.plane.distanceToPoint(hits[i].point) < 0) continue;
+      if (hid[hits[i].object.userData.oid]) continue;
       return hits[i].object.userData.oid;
     }
     return null;
@@ -1385,9 +1403,22 @@ class CelluleMusculaire extends DC.Logic {
     }
   }
 
+  /* Organites eteints : l'oeil d'une carte pose son identifiant dans S.hidden, et
+     l'objet 3D correspondant cesse d'etre rendu. On reapplique a chaque passe plutot
+     que de memoriser un delta — une vingtaine de booleens, et l'etat reste vrai meme
+     apres un changement de strate ou un remontage de la page. */
+  applyHidden() {
+    const hid = this.S.hidden || (this.S.hidden = {});
+    for (const id in this.parts) {
+      const p = this.parts[id];
+      if (p && p.obj) p.obj.visible = !hid[id];
+    }
+  }
+
   applyStage(fromLoop) {
     const S = this.S;
     if (!this.renderer) return;
+    this.applyHidden();
     if (S.cut !== this.appliedCut) { this.appliedCut = S.cut; this.applyCut(); }
     if (S.resetView !== this.appliedReset) {
       this.appliedReset = S.resetView;
@@ -1597,6 +1628,9 @@ class CelluleMusculaire extends DC.Logic {
        ouvert, il deplie sa hauteur et le contenu monte en cascade. */
     const fams = this.FAMS[lv] || [], famI = Math.min(st.odFam || 0, Math.max(0, fams.length - 1));
     const shut = !!st.odClosed;
+    const hid = st.hidden || (st.hidden = {});
+    V.odAnyHidden = Object.keys(hid).length > 0;
+    V.odShowAll = () => { st.hidden = {}; this.applyHidden(); this.sync(); };
     V.odScope = this.SCOPE[lv] || 'de ce niveau';
     V.odWidth = shut ? '470px' : 'min(700px, calc(100% - 120px))';
     V.odPadBottom = shut ? '0px' : '22px';
@@ -1616,14 +1650,36 @@ class CelluleMusculaire extends DC.Logic {
       delay: (0.08 + i * 0.035).toFixed(3) + 's',
       pick: () => { st.odFam = i; this.sync(); }
     }));
-    V.odItems = ((fams[famI] || { ids: [] }).ids).filter(id => this.INFO[id]).map((id, i) => ({
-      name: this.INFO[id].name,
-      sub: this.INFO[id].sub,
-      dot: this.INFO[id].dot,
-      bg: st.cards.indexOf(id) >= 0 ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.04)',
-      delay: (0.16 + i * 0.04).toFixed(3) + 's',
-      pick: () => { st.cards = st.cards.filter(c => c !== id).concat([id]).slice(-3); this.sync(); }
-    }));
+    V.odItems = ((fams[famI] || { ids: [] }).ids).filter(id => this.INFO[id]).map((id, i) => {
+      const off = !!hid[id];
+      return {
+        name: this.INFO[id].name,
+        sub: this.INFO[id].sub,
+        dot: this.INFO[id].dot,
+        bg: st.cards.indexOf(id) >= 0 ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.04)',
+        delay: (0.16 + i * 0.04).toFixed(3) + 's',
+        // eteint : la carte s'efface, mais son oeil reste net pour la rallumer
+        txOp: off ? '.4' : '1',
+        slash: off ? '1' : '0',
+        eyeFg: off ? '#f0a273' : 'rgba(244,231,227,.45)',
+        eyeBg: off ? 'rgba(240,162,115,.16)' : 'transparent',
+        eyeTitle: (off ? 'Réafficher ' : 'Masquer ') + this.INFO[id].name,
+        pick: () => { st.cards = st.cards.filter(c => c !== id).concat([id]).slice(-3); this.sync(); },
+        // l'oeil est pose DANS la carte : sans cette coupure, le clic ouvrirait aussi
+        // la fiche de l'organite qu'on vient d'eteindre.
+        toggle: e => {
+          if (e) e.stopPropagation();
+          if (hid[id]) delete hid[id];
+          else {
+            hid[id] = true;
+            st.cards = st.cards.filter(c => c !== id);
+            if (st.cardPos) delete st.cardPos[id];
+          }
+          this.applyHidden();
+          this.sync();
+        }
+      };
+    });
 
     /* Boutons carres du HUD : allumes quand leur reglage est ouvert. Meme logique que
        la cellule vegetale, dans la gamme rouge/orangee de la fibre. */
