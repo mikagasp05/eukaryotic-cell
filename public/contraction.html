@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contraction du sarcomère — page de test</title>
+<meta name="description" content="Animation 3D du glissement des myofilaments et du cycle du pont d'union.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   Page de test — Contraction du sarcomère
+   Même gamme que la cellule musculaire (orangé de la fibre sur fond prune),
+   mais page autonome : pas de runtime déclaratif ici. Le HUD est écrit
+   directement dans le DOM et la boucle d'animation le met à jour à la main —
+   une timeline qui avance 60 fois par seconde n'a rien à faire dans un moteur
+   de rendu par gabarit.
+   ========================================================================== */
+:root{
+  --bg:#150c11; --fg:#f9ece7; --fg-2:rgba(244,231,227,.62); --fg-3:rgba(244,231,227,.38);
+  --accent:#f0a273; --accent-soft:rgba(240,162,115,.16); --line:rgba(220,170,140,.16);
+  --glass:rgba(28,15,20,.92);
+  --mono:'IBM Plex Mono',ui-monospace,monospace; --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --serif:Spectral,Georgia,serif;
+  --ease:cubic-bezier(.22,.9,.24,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;color:var(--fg);font-family:var(--sans)}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;cursor:grab}
+#stage canvas:active{cursor:grabbing}
+
+/* ---- bandeau de titre ---------------------------------------------------- */
+#head{position:fixed;left:24px;top:20px;z-index:5;max-width:340px;pointer-events:none}
+#head .kick{font:400 9px/1.3 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--fg-3)}
+#head h1{margin:6px 0 0;font:400 25px/1.1 var(--serif);letter-spacing:.004em}
+#head .src{margin-top:8px;font:400 10px/1.5 var(--mono);color:var(--fg-3);max-width:30ch}
+
+/* ---- choix de la scène --------------------------------------------------- */
+#tabs{position:fixed;left:24px;top:180px;z-index:5;display:flex;flex-direction:column;gap:6px;width:290px}
+.tab{display:flex;align-items:baseline;gap:10px;padding:10px 12px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--fg-2);
+  font:500 12.5px/1.25 var(--sans);text-align:left;transition:background .18s,border-color .18s,color .16s}
+.tab:hover{background:rgba(255,255,255,.07)}
+.tab[aria-selected="true"]{background:var(--accent-soft);border-color:rgba(240,162,115,.42);color:var(--fg)}
+.tab .n{font:400 10px/1 var(--mono);color:var(--accent);flex:none}
+.tab .s{display:block;margin-top:3px;font:400 10px/1.4 var(--mono);color:var(--fg-3)}
+
+/* ---- panneau de commentaire --------------------------------------------- */
+#note{position:fixed;right:24px;top:20px;z-index:5;width:322px;padding:15px 16px 16px;border-radius:11px;
+  background:var(--glass);border:1px solid var(--line);box-shadow:0 22px 60px rgba(0,0,0,.5)}
+#note .kick{font:400 9px/1.3 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--fg-3)}
+#note h2{margin:7px 0 0;font:500 15px/1.25 var(--sans);color:var(--fg)}
+#note p{margin:9px 0 0;font:400 12px/1.62 var(--sans);color:rgba(244,231,227,.82)}
+#note .rule{margin:13px 0 0;padding-top:11px;border-top:1px solid var(--line);
+  font:400 10.5px/1.6 var(--mono);color:var(--fg-3)}
+#note .rule b{color:var(--accent);font-weight:400}
+
+/* ---- mesures (bandes A / I) --------------------------------------------- */
+#meas{position:fixed;right:24px;top:auto;bottom:210px;z-index:5;width:322px;padding:13px 16px;border-radius:11px;
+  background:var(--glass);border:1px solid var(--line)}
+#meas .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;
+  font:400 11px/1.5 var(--mono);color:var(--fg-2)}
+#meas .row b{font-weight:400;color:var(--fg)}
+#meas .row .tag{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)}
+
+/* ---- schéma 2D, en écho de la planche du cours --------------------------- */
+#schema{position:fixed;left:50%;bottom:132px;z-index:5;transform:translateX(-50%);
+  width:min(560px,calc(100% - 380px));padding:12px 16px 10px;border-radius:11px;
+  background:var(--glass);border:1px solid var(--line)}
+#schema .cap{font:400 9px/1.3 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--fg-3);margin-bottom:8px}
+#schema svg{display:block;width:100%;height:74px;overflow:visible}
+
+/* ---- transport ----------------------------------------------------------- */
+#bar{position:fixed;left:50%;bottom:22px;z-index:6;transform:translateX(-50%);
+  width:min(560px,calc(100% - 380px));padding:12px 16px 14px;border-radius:11px;
+  background:var(--glass);border:1px solid var(--line);box-shadow:0 -10px 40px rgba(0,0,0,.42)}
+#bar .top{display:flex;align-items:center;gap:12px}
+#play{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid rgba(240,162,115,.42);
+  background:var(--accent-soft);color:var(--fg);cursor:pointer;font-size:13px;line-height:1;
+  display:grid;place-items:center;transition:background .18s}
+#play:hover{background:rgba(240,162,115,.28)}
+#lab{flex:1;font:400 11px/1.4 var(--mono);color:var(--fg-2)}
+#reset{flex:none;background:none;border:0;padding:0;cursor:pointer;color:var(--fg-3);
+  font:400 10px/1.4 var(--mono);text-decoration:underline;text-underline-offset:3px}
+#reset:hover{color:var(--accent)}
+.track{position:relative;height:26px;margin-top:9px;cursor:pointer;touch-action:none;user-select:none}
+.track .rail{position:absolute;left:0;right:0;top:10px;height:6px;border-radius:3px;background:rgba(198,179,168,.18)}
+.track .fill{position:absolute;left:0;top:10px;height:6px;border-radius:3px;width:0%;
+  background:linear-gradient(90deg,rgba(240,162,115,.45),var(--accent))}
+.track .knob{position:absolute;top:1px;left:0%;width:24px;height:24px;margin-left:-12px;border-radius:7px;
+  background:#f9ece7;border:1px solid var(--accent);pointer-events:none;
+  box-shadow:0 5px 14px -4px rgba(0,0,0,.55),0 0 0 4px rgba(240,162,115,.13)}
+.track .ticks{position:absolute;left:0;right:0;top:10px;height:6px;pointer-events:none}
+.track .ticks i{position:absolute;top:-4px;width:1px;height:14px;background:rgba(244,231,227,.22)}
+
+/* ---- retour vers la cellule musculaire ------------------------------------ */
+/* En bas a gauche, et non en haut au centre : la page est affichee en iframe dans
+   index.html, dont le bouton « Changer de cellule » occupe deja ce coin-la, sur un
+   plan superieur. Un lien pose au meme endroit aurait disparu dessous. */
+#back{position:fixed;left:24px;bottom:126px;z-index:6;
+  padding:8px 14px;border-radius:9px;text-decoration:none;white-space:nowrap;
+  background:var(--glass);border:1px solid var(--line);color:var(--fg-2);
+  font:400 11px/1 var(--mono);transition:color .18s,border-color .18s,transform .18s}
+#back:hover{color:var(--fg);border-color:rgba(240,162,115,.42);transform:translateY(-2px)}
+@media (max-height:620px){ #back{display:none} }
+
+/* ---- légende ------------------------------------------------------------- */
+#key{position:fixed;left:24px;bottom:22px;z-index:5;display:flex;flex-direction:column;gap:5px}
+#key div{display:flex;align-items:center;gap:8px;font:400 10px/1.4 var(--mono);color:var(--fg-2)}
+#key i{width:9px;height:9px;border-radius:2px;flex:none}
+
+@media (max-width:1100px){
+  #note,#meas{display:none}
+  #schema,#bar{width:calc(100% - 48px)}
+}
+@media (max-height:680px){ #schema{display:none} }
+@media (max-height:560px){ #key,#meas{display:none} }
+</style>
+<!-- three est servi en local, comme les autres pages de public/ : la page doit
+     marcher hors-ligne. public/ n'est pas traite par Vite, d'ou l'import map. -->
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+
+<div id="stage"></div>
+
+<a id="back" href="./cellule-musculaire.html">← Revenir à la fibre musculaire</a>
+
+<div id="head">
+  <div class="kick">Page de test</div>
+  <h1>Contraction du sarcomère</h1>
+  <div class="src">D'après le Livret de cours O.S., chap. 5 « Système musculaire » (Éd. École Lemania) — schémas du glissement des myofilaments et du pont d'union.</div>
+</div>
+
+<div id="tabs" role="tablist">
+  <button class="tab" role="tab" id="tab0" aria-selected="true" type="button">
+    <span class="n">01</span>
+    <span>Glissement des myofilaments<span class="s">le sarcomère se raccourcit</span></span>
+  </button>
+  <button class="tab" role="tab" id="tab1" aria-selected="false" type="button">
+    <span class="n">02</span>
+    <span>Le pont d'union, en cinq temps<span class="s">la myosine tire l'actine</span></span>
+  </button>
+</div>
+
+<div id="note">
+  <div class="kick" id="noteKick">état</div>
+  <h2 id="noteTitle">Muscle relâché</h2>
+  <p id="noteText"></p>
+  <div class="rule" id="noteRule"></div>
+</div>
+
+<div id="meas">
+  <div class="row"><span class="tag">Bande A · myosine</span><b id="mA">—</b></div>
+  <div class="row"><span class="tag">Bande I · actine seule</span><b id="mI">—</b></div>
+  <div class="row"><span class="tag">Sarcomère · Z à Z</span><b id="mZ">—</b></div>
+</div>
+
+<div id="schema">
+  <div class="cap">Vue schématique — en écho de la planche du cours</div>
+  <svg id="svg" viewBox="0 0 560 74" preserveAspectRatio="none" aria-hidden="true"></svg>
+</div>
+
+<div id="bar">
+  <div class="top">
+    <button id="play" type="button" aria-label="Lecture ou pause">❚❚</button>
+    <div id="lab">—</div>
+    <button id="reset" type="button">revenir au repos</button>
+  </div>
+  <div class="track" id="track">
+    <div class="rail"></div><div class="fill" id="fill"></div>
+    <div class="ticks" id="ticks"></div>
+    <div class="knob" id="knob"></div>
+  </div>
+</div>
+
+<div id="key">
+  <div><i style="background:#c0454f"></i>Myofilament épais — myosine</div>
+  <div><i style="background:#e9b48f"></i>Myofilament mince — actine</div>
+  <div><i style="background:#f0d3c0"></i>Strie Z</div>
+  <div><i style="background:#d9d16a"></i>Ligne M</div>
+  <div><i style="background:#8fd0b0"></i>Titine</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================================
+   1. SCÈNE
+   Mêmes lumières et même gamme que la cellule musculaire : les deux pages
+   doivent se ressembler, puisqu'elles montrent le même objet.
+   ========================================================================== */
+const host = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+try {
+  if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
+  else renderer.outputEncoding = THREE.sRGBEncoding;
+} catch (e) { }
+try { renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.03; } catch (e) { }
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 120);
+scene.add(new THREE.AmbientLight(0xffffff, 0.19));
+scene.add(new THREE.HemisphereLight(0xffd8c0, 0x3a1a22, 0.46));
+const d1 = new THREE.DirectionalLight(0xfff0e0, 1.28); d1.position.set(2.6, 3.4, 3.2); scene.add(d1);
+const d2 = new THREE.DirectionalLight(0x8fc8f5, 0.42); d2.position.set(-3.2, -1.4, 1.6); scene.add(d2);
+const d3 = new THREE.DirectionalLight(0xff9a86, 0.3); d3.position.set(0.5, -2.4, -3); scene.add(d3);
+
+/* poussière : la même respiration de fond que les autres pages */
+{
+  const n = 300, pos = new Float32Array(n * 3);
+  let seed = 20260824;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let i = 0; i < n; i++) {
+    const r = 3.6 + rnd() * 6, th = rnd() * Math.PI * 2, ph = Math.acos(rnd() * 2 - 1);
+    pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    pos[i * 3 + 1] = r * Math.cos(ph) * 0.7;
+    pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({
+    color: 0xf3c8ac, size: 0.034, transparent: true, opacity: 0.34, depthWrite: false
+  })));
+}
+
+/* ============================================================================
+   2. OUTILS DE GÉOMÉTRIE
+   Repris de cellule-musculaire.html : mêmes primitives, donc mêmes formes.
+   ========================================================================== */
+const COL = {
+  z: 0xf0d3c0, actine: 0xe9b48f, myosine: 0xc0454f, tete: 0xe2606c,
+  ligneM: 0xd9d16a, titine: 0x8fd0b0, calcium: 0x7fe0a0,
+  tropo: 0xd8cfc6, troponine: 0x9d7cc8, atp: 0xf0d264
+};
+const mat = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.52, metalness: 0 }, o || {}));
+/* cylindre couché sur X : trois filaments sur quatre le sont ici */
+function xCyl(r1, r2, len, seg) {
+  const g = new THREE.CylinderGeometry(r1, r2, len, seg || 14);
+  g.rotateZ(Math.PI / 2);
+  return g;
+}
+function inst(geo, material, list) {
+  const im = new THREE.InstancedMesh(geo, material, list.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3();
+  list.forEach((p, i) => {
+    v.set(p[0], p[1], p[2]);
+    if (p.length > 3) q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), p[3]); else q.identity();
+    m4.compose(v, q, sc);
+    im.setMatrixAt(i, m4);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  return im;
+}
+function tubeG(pts, rad, tSeg, rSeg) {
+  const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])), false, 'catmullrom', 0.5);
+  return new THREE.TubeGeometry(c, tSeg || 44, rad, rSeg || 6, false);
+}
+/* étiquette lisible sous tous les angles : une texture de texte sur un sprite */
+function labelSprite(text, color) {
+  const pad = 26, fs = 52;
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  ctx.font = '500 ' + fs + "px 'IBM Plex Mono', monospace";
+  cv.width = Math.ceil(ctx.measureText(text).width) + pad * 2;
+  cv.height = fs + pad * 2;
+  const c2 = cv.getContext('2d');
+  c2.font = '500 ' + fs + "px 'IBM Plex Mono', monospace";
+  c2.fillStyle = 'rgba(20,11,15,.88)';
+  c2.strokeStyle = 'rgba(240,162,115,.5)';
+  c2.lineWidth = 3;
+  const r = 16, w = cv.width, h = cv.height;
+  c2.beginPath();
+  c2.moveTo(r, 0); c2.lineTo(w - r, 0); c2.quadraticCurveTo(w, 0, w, r);
+  c2.lineTo(w, h - r); c2.quadraticCurveTo(w, h, w - r, h);
+  c2.lineTo(r, h); c2.quadraticCurveTo(0, h, 0, h - r);
+  c2.lineTo(0, r); c2.quadraticCurveTo(0, 0, r, 0);
+  c2.closePath(); c2.fill(); c2.stroke();
+  c2.fillStyle = color || '#f9ece7';
+  c2.textBaseline = 'middle';
+  c2.fillText(text, pad, h / 2 + 2);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.anisotropy = 4;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sp.scale.set(cv.width / cv.height * 0.3, 0.3, 1);
+  return sp;
+}
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+
+/* ============================================================================
+   3. SCÈNE A — LE GLISSEMENT DES MYOFILAMENTS
+   Le point du cours : pendant la contraction, la longueur des filaments épais
+   ET celle des filaments minces ne changent pas. Ce sont les stries Z qui se
+   rapprochent, en entraînant les filaments minces vers le centre. On modélise
+   donc des longueurs constantes, et une seule variable : la position des Z.
+   ========================================================================== */
+const SARCO = (() => {
+  const g = new THREE.Group();
+  const d = 0.30, RM = 0.6, RA = 0.66;
+  const hex = [], tri = [];
+  for (let i = -5; i <= 5; i++) {
+    for (let j = -5; j <= 5; j++) {
+      const y = i * d + j * d * 0.5, z = j * d * 0.866;
+      if (Math.hypot(y, z) <= RM) hex.push([y, z]);
+      [[0.5, 0.2887], [1.0, 0.5774]].forEach(c => {
+        const ay = y + c[0] * d, az = z + c[1] * d;
+        if (Math.hypot(ay, az) <= RA) tri.push([ay, az]);
+      });
+    }
+  }
+  const Z0 = 1.9;        // demi-longueur du sarcomère au repos
+  const MHALF = 1.28;    // demi-longueur du filament épais — invariable
+  const ZMIN = MHALF + 0.06;  // contraction maximale : la strie Z bute sur la myosine
+  const ALEN = Z0 - 0.43;     // longueur du filament mince — invariable
+
+  /* --- stries Z : deux disques, qui se rapprochent ------------------------ */
+  const zMat = mat(COL.z, { roughness: 0.5, side: THREE.DoubleSide });
+  const zDiscs = [-1, 1].map(sgn => {
+    const grp = new THREE.Group();
+    grp.add(new THREE.Mesh(xCyl(0.78, 0.78, 0.06, 44), zMat));
+    for (let k = 0; k < 22; k++) {
+      const a = k / 22 * Math.PI * 2, r = 0.4 + (k % 3) * 0.17;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), zMat);
+      b.position.set(k % 2 ? 0.05 : -0.05, Math.cos(a) * r, Math.sin(a) * r);
+      grp.add(b);
+    }
+    grp.userData.sgn = sgn;
+    g.add(grp);
+    return grp;
+  });
+
+  /* --- filaments minces : longueur figée, ancrés sur leur strie Z ---------- */
+  const aMat = mat(COL.actine, { roughness: 0.5 });
+  const aGeo = xCyl(0.03, 0.03, ALEN, 10);
+  const actin = [-1, 1].map(sgn => {
+    const im = inst(aGeo, aMat, tri.map(p => [0, p[0], p[1]]));
+    im.userData.sgn = sgn;
+    g.add(im);
+    return im;
+  });
+
+  /* --- filaments épais : immobiles, c'est la référence -------------------- */
+  const mMat = mat(COL.myosine, { roughness: 0.5 });
+  const mGeo = xCyl(0.052, 0.052, MHALF * 2, 16);
+  hex.forEach(p => {
+    const m = new THREE.Mesh(mGeo, mMat);
+    m.position.set(0, p[0], p[1]);
+    g.add(m);
+  });
+
+  /* --- têtes de myosine : elles rament vers le centre --------------------- */
+  const heads = [];
+  hex.forEach(p => {
+    for (let s = 0; s < 12; s++) {
+      const x = (s < 6 ? -1 : 1) * (0.3 + (s % 6) * 0.16);
+      const a = s * 1.05 + p[0] * 3;
+      heads.push({ x, y: p[0], z: p[1], a, sgn: s < 6 ? -1 : 1 });
+    }
+  });
+  const hGeo = new THREE.SphereGeometry(0.036, 8, 6); hGeo.scale(1.1, 1.9, 1.1);
+  const headMesh = new THREE.InstancedMesh(hGeo, mat(COL.tete, { roughness: 0.42 }), heads.length);
+  g.add(headMesh);
+  const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(),
+    _s = new THREE.Vector3(1, 1, 1), _ax = new THREE.Vector3(1, 0, 0);
+
+  /* --- ligne M ------------------------------------------------------------ */
+  const mlMat = mat(COL.ligneM, { roughness: 0.45, side: THREE.DoubleSide });
+  g.add(new THREE.Mesh(xCyl(0.64, 0.64, 0.035, 40), mlMat));
+  for (let k = 0; k < 14; k++) {
+    const a = k / 14 * Math.PI * 2;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, 0.035), mlMat);
+    b.position.set(0, Math.cos(a) * 0.35, Math.sin(a) * 0.35);
+    g.add(b);
+  }
+
+  /* --- titine : le ressort entre le bout de la myosine et la strie Z ------
+     Construite une fois sur sa longueur de repos, puis comprimée en X. C'est
+     la seule pièce dont la longueur CHANGE, et c'est fidèle : la titine est
+     élastique, les myofilaments ne le sont pas. */
+  const L0 = Z0 - MHALF;
+  const tMat = mat(COL.titine, { roughness: 0.45 });
+  const titin = [-1, 1].map(sgn => {
+    const grp = new THREE.Group();
+    hex.forEach(p => {
+      const pts = [];
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        pts.push([t * L0, p[0] + Math.sin(t * 14) * 0.028, p[1] + Math.cos(t * 14) * 0.028]);
+      }
+      grp.add(new THREE.Mesh(tubeG(pts, 0.011, 30, 4), tMat));
+    });
+    grp.scale.x = sgn;          // le côté gauche est le miroir du droit
+    grp.userData.sgn = sgn;
+    g.add(grp);
+    return grp;
+  });
+
+  /* --- mise à jour : une seule variable, la contraction c ∈ [0,1] --------- */
+  function update(c, phase) {
+    const zx = lerp(Z0, ZMIN, c);
+    zDiscs.forEach(m => { m.position.x = m.userData.sgn * zx; });
+    // le filament mince garde sa longueur : c'est son CENTRE qui avance
+    actin.forEach(im => { im.position.x = im.userData.sgn * (zx - ALEN / 2); });
+    titin.forEach(t => {
+      t.position.x = t.userData.sgn * MHALF;
+      t.scale.x = t.userData.sgn * Math.max(0.04, (zx - MHALF) / L0);
+    });
+    // les têtes rament : bascule vers le centre, retour rapide
+    const stroke = (phase % 1);
+    const tilt = stroke < 0.62 ? smooth(stroke / 0.62) : 1 - smooth((stroke - 0.62) / 0.38);
+    heads.forEach((h, i) => {
+      const swing = (tilt - 0.5) * 1.15 * h.sgn;
+      _q.setFromAxisAngle(_ax, h.a + swing);
+      _v.set(h.x, h.y + Math.cos(h.a + swing) * 0.075, h.z + Math.sin(h.a + swing) * 0.075);
+      _m4.compose(_v, _q, _s);
+      headMesh.setMatrixAt(i, _m4);
+    });
+    headMesh.instanceMatrix.needsUpdate = true;
+    return { zx, aLen: ALEN, mHalf: MHALF };
+  }
+
+  return { group: g, update, Z0, ZMIN, MHALF, ALEN };
+})();
+
+/* ============================================================================
+   4. SCÈNE B — LE PONT D'UNION, EN CINQ TEMPS
+   Gros plan sur une seule tête de myosine et un seul filament mince. Le cycle
+   du cours : ATP → hydrolyse et redressement → fixation → bascule qui tire
+   l'actine → nouvel ATP qui détache. Le filament mince garde le terrain gagné
+   d'un cycle à l'autre : c'est ce cumul qui fait le glissement de la scène A.
+   ========================================================================== */
+const PONT = (() => {
+  const g = new THREE.Group();
+  g.visible = false;
+
+  /* --- filament épais, en bas -------------------------------------------- */
+  const thick = new THREE.Mesh(xCyl(0.26, 0.26, 4.0, 28), mat(COL.myosine, { roughness: 0.5 }));
+  thick.position.set(0, -0.95, 0);
+  g.add(thick);
+  for (let k = 0; k < 20; k++) {           // torsades du filament épais
+    const t = k / 20 * Math.PI * 2 * 3;
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), mat(0xa93a45, { roughness: 0.55 }));
+    b.position.set(-1.85 + k * 0.195, -0.95 + Math.cos(t) * 0.27, Math.sin(t) * 0.27);
+    g.add(b);
+  }
+
+  /* --- filament mince : deux brins de perles + tropomyosine + troponine --- */
+  const thin = new THREE.Group();
+  const beadGeo = new THREE.SphereGeometry(0.15, 14, 11);
+  const beadMat = mat(COL.actine, { roughness: 0.48 });
+  const N = 21, STEP = 0.26;
+  for (let k = 0; k < N; k++) {
+    const t = k * 0.62;
+    [1, -1].forEach(s => {
+      const b = new THREE.Mesh(beadGeo, beadMat);
+      b.position.set(-2.6 + k * STEP, Math.cos(t) * 0.1 * s, Math.sin(t) * 0.1 * s + 0.02 * s);
+      thin.add(b);
+    });
+  }
+  /* tropomyosine : le ruban qui masque les sites, et qui s'écarte au calcium */
+  const tropoMat = mat(COL.tropo, { roughness: 0.6 });
+  const tropo = [1, -1].map(s => {
+    const pts = [];
+    for (let k = 0; k <= 60; k++) {
+      const u = k / 60, x = -2.6 + u * (N - 1) * STEP, t = u * (N - 1) * 0.62;
+      pts.push([x, Math.cos(t) * 0.17 * s, Math.sin(t) * 0.17 * s]);
+    }
+    const m = new THREE.Mesh(tubeG(pts, 0.045, 200, 6), tropoMat);
+    thin.add(m);
+    return m;
+  });
+  /* troponine : les blocs violets, un par tour, qui portent le site à calcium */
+  const tropoNine = [];
+  for (let k = 2; k < N - 2; k += 5) {
+    const t = k * 0.62;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), mat(COL.troponine, { roughness: 0.4 }));
+    m.position.set(-2.6 + k * STEP, Math.cos(t) * 0.2, Math.sin(t) * 0.2 + 0.06);
+    thin.add(m); tropoNine.push(m);
+  }
+  /* sites de liaison : ils s'allument quand la tropomyosine s'écarte */
+  const siteMat = new THREE.MeshStandardMaterial({
+    color: 0x8ff0c4, roughness: 0.3, emissive: 0x2f7f5e, emissiveIntensity: 0, transparent: true, opacity: 0
+  });
+  const sites = [];
+  for (let k = 3; k < N - 3; k += 3) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), siteMat);
+    m.position.set(-2.6 + k * STEP, 0.16, 0.1);
+    thin.add(m); sites.push(m);
+  }
+  thin.position.y = 0.62;
+  g.add(thin);
+
+  /* --- la tête de myosine : un bras, un col, une tête --------------------- */
+  const arm = new THREE.Group();               // pivote au pied, sur le filament épais
+  arm.position.set(0, -0.72, 0.16);
+  const ARM = 0.92;                            // portée du bras : la tête doit toucher l'actine
+  const armMesh = new THREE.Mesh(xCyl(0.055, 0.07, ARM, 12), mat(0xd4525f, { roughness: 0.45 }));
+  armMesh.rotation.z = Math.PI / 2;            // debout : le cylindre couché sur X se redresse
+  armMesh.position.y = ARM / 2;
+  arm.add(armMesh);
+  const wrist = new THREE.Group();             // le col, qui bascule
+  wrist.position.y = ARM;
+  const headGeo = new THREE.SphereGeometry(0.15, 16, 12); headGeo.scale(1.5, 0.85, 0.85);
+  const headMesh = new THREE.Mesh(headGeo, mat(COL.tete, { roughness: 0.4 }));
+  headMesh.position.set(0.14, 0.16, 0);
+  wrist.add(headMesh);
+  const neck = new THREE.Mesh(xCyl(0.045, 0.05, 0.3, 10), mat(0xd4525f, { roughness: 0.45 }));
+  neck.rotation.z = Math.PI / 3;
+  neck.position.set(0.05, 0.07, 0);
+  wrist.add(neck);
+  arm.add(wrist);
+  g.add(arm);
+
+  /* --- jetons ATP / ADP + Pi / Ca2+ --------------------------------------- */
+  const atpTag = labelSprite('ATP', '#ffe9a8'); atpTag.visible = false; g.add(atpTag);
+  const adpTag = labelSprite('ADP + Pi', '#ffe9a8'); adpTag.visible = false; g.add(adpTag);
+  const caTag = labelSprite('Ca2+', '#a8f5cf'); caTag.visible = false; g.add(caTag);
+  const caGeo = new THREE.SphereGeometry(0.07, 10, 8);
+  const caMat = mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5, transparent: true, opacity: 0 });
+  const cas = [];
+  let cseed = 7;
+  const crnd = () => ((cseed = (cseed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let k = 0; k < 26; k++) {
+    const m = new THREE.Mesh(caGeo, caMat);
+    m.userData.home = new THREE.Vector3(-2.8 + crnd() * 5.6, 1.6 + crnd() * 1.4, -1 + crnd() * 2);
+    m.position.copy(m.userData.home);
+    g.add(m); cas.push(m);
+  }
+
+  /* --- le cycle -----------------------------------------------------------
+     6 phases : le déclencheur calcique, puis les cinq temps du cours.
+     `slide` cumule le terrain gagné par le filament mince.                   */
+  let slide = 0;
+  const SLIDE_STEP = 0.42;
+  const BASE_X = 0.0;
+
+  function update(step, u) {
+    // step : 0 = déclencheur, 1..5 = les cinq temps ; u : avancement dans l'étape
+    const e = smooth(u);
+    const gate = step >= 1 ? 1 : e;              // ouverture des sites
+    // tropomyosine : elle roule et découvre les sites
+    tropo.forEach((m, i) => { m.rotation.x = gate * 0.9 * (i ? -1 : 1); });
+    tropoNine.forEach(m => { m.scale.setScalar(1 + gate * 0.12); });
+    siteMat.opacity = gate * 0.95;
+    siteMat.emissiveIntensity = gate * 0.8;
+    // calcium : il arrive pendant le déclencheur, puis reste fixé
+    const caIn = step === 0 ? e : 1;
+    caMat.opacity = caIn * 0.95;
+    cas.forEach((m, i) => {
+      const target = tropoNine[i % tropoNine.length];
+      m.position.lerpVectors(m.userData.home, target.position.clone().add(thin.position), caIn);
+    });
+    caTag.visible = step === 0;
+    if (step === 0) caTag.position.set(-2.4, 2.1, 0);
+
+    /* bascule du col : 0 = configuration de basse énergie (tête pliée),
+       1 = configuration de haute énergie (tête redressée). */
+    let cocked = 0, attach = 0, stroking = 0;
+    if (step === 0) { cocked = 0; }
+    else if (step === 1) { cocked = 0; }
+    else if (step === 2) { cocked = e; }
+    else if (step === 3) { cocked = 1; attach = e; }
+    else if (step === 4) { cocked = 1 - e; attach = 1; stroking = e; }
+    else if (step === 5) { cocked = 0; attach = 1 - e; }
+
+    wrist.rotation.z = lerp(-0.62, 0.42, cocked);
+    arm.rotation.z = lerp(-0.05, 0.1, cocked) - attach * 0.06;
+    // la tête se rapproche du filament mince quand elle se lie
+    arm.position.y = -0.72 + attach * 0.1;
+
+    /* Le filament mince avance pendant le temps 4 et GARDE son avance : au temps 5
+       la tête se détache, elle ne ramène pas l'actine avec elle. Sans ce palier, le
+       filament repartait en arrière au moment du détachement — l'inverse de ce que
+       le cours décrit. Le gain n'est verse dans slide qu'au bouclage du cycle. */
+    const gained = slide + (step === 4 ? stroking * SLIDE_STEP : (step === 5 ? SLIDE_STEP : 0));
+    thin.position.x = BASE_X - gained;
+
+    // jetons
+    atpTag.visible = (step === 1) || (step === 5);
+    adpTag.visible = (step === 2) || (step === 3) || (step === 4 && u < 0.5);
+    const hx = arm.position.x + 0.3, hy = arm.position.y + 1.05;
+    atpTag.position.set(hx - 0.75, hy + 0.28, 0.3);
+    adpTag.position.set(hx - 0.95, hy + 0.28, 0.3);
+    if (step === 4) adpTag.position.y += e * 0.7;         // l'ADP et le Pi s'échappent
+    if (step === 5) atpTag.position.x -= (1 - e) * 1.4;   // le nouvel ATP arrive de la gauche
+    return gained;
+  }
+  function commit() { slide = Math.min(slide + SLIDE_STEP, 1.7); }
+  function reset() { slide = 0; }
+
+  return { group: g, update, commit, reset };
+})();
+
+scene.add(SARCO.group);
+scene.add(PONT.group);
+
+/* ============================================================================
+   5. TEXTES
+   Le découpage et le vocabulaire suivent le chapitre 5 du livret ; la
+   formulation est réécrite, pour ne pas recopier le support de cours.
+   ========================================================================== */
+const ETATS = [
+  {
+    seuil: 0.04, kick: 'état 1 sur 3', titre: 'Muscle relâché',
+    txt: "Au repos, les filaments minces ne recouvrent que les extrémités des filaments épais. La bande I — la partie du sarcomère où l'actine est seule — est à son maximum."
+  },
+  {
+    seuil: 0.9, kick: 'état 2 sur 3', titre: 'Muscle en contraction',
+    txt: "Les têtes de myosine tirent les filaments minces vers le centre du sarcomère. Les stries Z se rapprochent, la bande I se réduit — mais aucun filament ne raccourcit."
+  },
+  {
+    seuil: 1.01, kick: 'état 3 sur 3', titre: 'Muscle complètement contracté',
+    txt: "Les stries Z butent sur les extrémités des filaments épais et les filaments minces se croisent au-delà de la ligne M. Le sarcomère a atteint sa longueur minimale."
+  }
+];
+const TEMPS = [
+  { kick: 'déclencheur', titre: 'Le calcium découvre les sites', txt: "Le Ca²⁺ libéré par le réticulum sarcoplasmique se fixe sur la troponine. La tropomyosine pivote et dégage les sites de liaison de la myosine sur l'actine : la contraction devient possible." },
+  { kick: 'temps 1 sur 5', titre: 'Tête liée à l\'ATP', txt: "Avant la contraction, la tête de myosine porte une molécule d'ATP. Elle est en configuration de basse énergie, repliée, et détachée de l'actine." },
+  { kick: 'temps 2 sur 5', titre: 'Hydrolyse de l\'ATP', txt: "La tête hydrolyse l'ATP en ADP et en phosphate inorganique (Pi). Elle adopte sa configuration de haute énergie : la tête se redresse, armée comme un ressort." },
+  { kick: 'temps 3 sur 5', titre: 'Formation du pont', txt: "La tête redressée se fixe sur un site de liaison de l'actine. Le pont d'union est formé — c'est lui qui donne son nom au mécanisme." },
+  { kick: 'temps 4 sur 5', titre: 'Bascule : le filament glisse', txt: "La myosine libère l'ADP et le Pi, et revient à sa configuration de basse énergie. C'est cette bascule qui tire le filament mince vers le centre du sarcomère." },
+  { kick: 'temps 5 sur 5', titre: 'Détachement par un nouvel ATP', txt: "Une nouvelle molécule d'ATP se fixe sur la tête et la détache de l'actine. Un nouveau cycle peut commencer — sans ATP, la tête resterait collée (c'est la rigidité cadavérique)." }
+];
+const REGLE_A = "<b>Invariant :</b> la longueur des myofilaments épais et celle des myofilaments minces ne changent pas. Seul leur chevauchement change.";
+const REGLE_B = "<b>Invariant :</b> chaque cycle ne gagne qu'un pas. C'est la répétition, sur des milliers de têtes, qui raccourcit le sarcomère.";
+
+/* ============================================================================
+   6. HUD
+   ========================================================================== */
+const el = (id) => document.getElementById(id);
+const noteKick = el('noteKick'), noteTitle = el('noteTitle'), noteText = el('noteText'), noteRule = el('noteRule');
+const fill = el('fill'), knob = el('knob'), track = el('track'), ticks = el('ticks');
+const lab = el('lab'), playBtn = el('play');
+
+let scene_ = 0;          // 0 = glissement, 1 = pont d'union
+let t = 0;               // avancement : [0,1] en scène A, [0,6] en scène B
+let playing = true;
+let phase = 0;           // rame des têtes, scène A
+
+function setScene(n) {
+  scene_ = n;
+  SARCO.group.visible = n === 0;
+  PONT.group.visible = n === 1;
+  el('tab0').setAttribute('aria-selected', n === 0 ? 'true' : 'false');
+  el('tab1').setAttribute('aria-selected', n === 1 ? 'true' : 'false');
+  el('schema').style.display = n === 0 ? '' : 'none';
+  el('meas').style.display = n === 0 ? '' : 'none';
+  noteRule.innerHTML = n === 0 ? REGLE_A : REGLE_B;
+  ticks.innerHTML = '';
+  if (n === 1) {
+    for (let i = 1; i < 6; i++) {
+      const i2 = document.createElement('i');
+      i2.style.left = (i / 6 * 100) + '%';
+      ticks.appendChild(i2);
+    }
+  }
+  t = 0;
+  PONT.reset();
+  cam.tRad = n === 0 ? 7.6 : 8.4;
+}
+el('tab0').addEventListener('click', () => setScene(0));
+el('tab1').addEventListener('click', () => setScene(1));
+playBtn.addEventListener('click', () => {
+  playing = !playing;
+  playBtn.textContent = playing ? '❚❚' : '►';
+});
+el('reset').addEventListener('click', () => { t = 0; PONT.reset(); });
+
+/* glissière : on écrit directement, sans passer par un rendu de gabarit */
+function scrub(ev) {
+  const r = track.getBoundingClientRect();
+  const u = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+  const span = scene_ === 0 ? 1 : 6;
+  const nt = u * span;
+  if (scene_ === 1) PONT.reset();      // on repart du même terrain quand on rembobine
+  t = nt;
+  playing = false;
+  playBtn.textContent = '►';
+}
+track.addEventListener('pointerdown', e => {
+  track.setPointerCapture(e.pointerId);
+  scrub(e);
+  const mv = ev => scrub(ev);
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+});
+
+/* ============================================================================
+   7. SCHÉMA 2D — écho de la planche du cours
+   ========================================================================== */
+const svg = el('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const mk = (tag, attrs) => {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+};
+const svgParts = (() => {
+  const rows = [];
+  for (let r = 0; r < 3; r++) {
+    const y = 14 + r * 22;
+    const thick = mk('rect', { x: 0, y: y - 4, width: 0, height: 8, rx: 2, fill: '#8f7fd0' });
+    const thinL = mk('rect', { x: 0, y: y - 1.5, width: 0, height: 3, rx: 1.5, fill: '#e8913f' });
+    const thinR = mk('rect', { x: 0, y: y - 1.5, width: 0, height: 3, rx: 1.5, fill: '#e8913f' });
+    svg.appendChild(thinL); svg.appendChild(thinR); svg.appendChild(thick);
+    rows.push({ thick, thinL, thinR, y });
+  }
+  const zL = mk('rect', { x: 0, y: 4, width: 4, height: 62, rx: 1, fill: '#9a9a9a' });
+  const zR = mk('rect', { x: 0, y: 4, width: 4, height: 62, rx: 1, fill: '#9a9a9a' });
+  const mLine = mk('line', { x1: 280, y1: 6, x2: 280, y2: 64, stroke: '#d9d16a', 'stroke-width': 1.4, 'stroke-dasharray': '3 3' });
+  svg.appendChild(zL); svg.appendChild(zR); svg.appendChild(mLine);
+  return { rows, zL, zR, mLine };
+})();
+function drawSchema(c) {
+  const CX = 280, K = 118;                    // centre, et pixels par unité de modèle
+  const zx = lerp(SARCO.Z0, SARCO.ZMIN, c) * K;
+  const mh = SARCO.MHALF * K, al = SARCO.ALEN * K;
+  svgParts.zL.setAttribute('x', CX - zx - 2);
+  svgParts.zR.setAttribute('x', CX + zx - 2);
+  svgParts.rows.forEach((r, i) => {
+    r.thick.setAttribute('x', CX - mh); r.thick.setAttribute('width', mh * 2);
+    const off = (i - 1) * 0;
+    r.thinL.setAttribute('x', CX - zx + off); r.thinL.setAttribute('width', al);
+    r.thinR.setAttribute('x', CX + zx - al + off); r.thinR.setAttribute('width', al);
+  });
+}
+
+/* ============================================================================
+   8. CAMÉRA — même geste que les pages sœurs, glisser pour orbiter
+   ========================================================================== */
+const cam = { theta: -0.52, phi: 1.24, rad: 7.6, tRad: 7.6 };
+{
+  const cv = renderer.domElement;
+  let dragging = false, lx = 0, ly = 0;
+  cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    cam.theta -= (e.clientX - lx) * 0.006;
+    cam.phi = Math.max(0.35, Math.min(2.7, cam.phi - (e.clientY - ly) * 0.006));
+    lx = e.clientX; ly = e.clientY;
+  });
+  cv.addEventListener('pointerup', () => { dragging = false; });
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.tRad = Math.max(3.4, Math.min(15, cam.tRad + e.deltaY * 0.004));
+  }, { passive: false });
+}
+function resize() {
+  const w = host.clientWidth || 1, h = host.clientHeight || 1;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================================================================
+   9. BOUCLE
+   ========================================================================== */
+let last = 0, prevStep = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - (last || now)) / 1000); last = now;
+
+  if (playing) {
+    if (scene_ === 0) {
+      t += dt * 0.28;
+      if (t > 1) t = 1;                       // on s'arrête sur la contraction complète
+      if (t >= 1) { playing = false; playBtn.textContent = '►'; }
+    } else {
+      t += dt * 0.42;
+      if (t >= 6) { t = 1; PONT.commit(); }   // un cycle de plus, on saute le déclencheur
+    }
+  }
+  phase += dt * (scene_ === 0 ? 0.8 : 0);
+
+  if (scene_ === 0) {
+    const c = Math.max(0, Math.min(1, t));
+    SARCO.update(c, phase);
+    drawSchema(c);
+    const e = ETATS.find(s => c < s.seuil) || ETATS[2];
+    noteKick.textContent = e.kick; noteTitle.textContent = e.titre; noteText.textContent = e.txt;
+    const zx = lerp(SARCO.Z0, SARCO.ZMIN, c);
+    // « µm » : le sarcomère fait environ 2 µm au repos, on cale l'échelle dessus
+    const K = 2.0 / (SARCO.Z0 * 2);
+    el('mA').textContent = (SARCO.MHALF * 2 * K).toFixed(2) + ' µm — constante';
+    el('mI').textContent = Math.max(0, (zx - SARCO.MHALF) * 2 * K).toFixed(2) + ' µm';
+    el('mZ').textContent = (zx * 2 * K).toFixed(2) + ' µm';
+    lab.textContent = 'Contraction ' + Math.round(c * 100) + ' %';
+    fill.style.width = (c * 100) + '%';
+    knob.style.left = (c * 100) + '%';
+  } else {
+    const step = Math.min(5, Math.floor(t));
+    const u = t - step;
+    if (step !== prevStep) prevStep = step;
+    PONT.update(step, u);
+    const d = TEMPS[step];
+    noteKick.textContent = d.kick; noteTitle.textContent = d.titre; noteText.textContent = d.txt;
+    lab.textContent = d.kick.charAt(0).toUpperCase() + d.kick.slice(1) + ' — ' + d.titre;
+    const p = t / 6 * 100;
+    fill.style.width = p + '%';
+    knob.style.left = p + '%';
+  }
+
+  cam.rad += (cam.tRad - cam.rad) * Math.min(1, dt * 6);
+  const r = cam.rad, ph = cam.phi, th = cam.theta;
+  camera.position.set(r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph), r * Math.sin(ph) * Math.cos(th));
+  // On vise sous le centre : le modèle remonte à l'écran et dégage les panneaux du bas.
+  camera.lookAt(0, scene_ === 0 ? -0.42 : -0.30, 0);
+  renderer.render(scene, camera);
+}
+setScene(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

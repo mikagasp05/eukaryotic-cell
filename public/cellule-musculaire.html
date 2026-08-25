@@ -216,13 +216,15 @@ a:hover{color:#ffc9a8}
     </div>
   </div>
 
-  <div style="position:absolute;right:22px;bottom:56px;z-index:4;width:236px;padding:11px 13px;border-radius:8px;border:1px solid rgba(220,170,140,.16);background:rgba(34,18,24,.5);backdrop-filter:blur(8px);display:flex;align-items:center;gap:10px">
+  <!-- Cette carte etait inerte : elle annoncait un atlas sans y mener. Elle ouvre
+       desormais l'animation de la contraction (contraction.html). -->
+  <a href="./contraction.html" style="position:absolute;right:22px;bottom:56px;z-index:4;width:236px;padding:11px 13px;border-radius:8px;border:1px solid rgba(220,170,140,.16);background:rgba(34,18,24,.5);backdrop-filter:blur(8px);display:flex;align-items:center;gap:10px;text-decoration:none;cursor:pointer;transition:background .18s,border-color .18s,transform .18s" onmouseover="this.style.background='rgba(52,28,34,.72)';this.style.borderColor='rgba(240,162,115,.42)';this.style.transform='translateY(-2px)'" onmouseout="this.style.background='rgba(34,18,24,.5)';this.style.borderColor='rgba(220,170,140,.16)';this.style.transform='none'">
     <div style="flex:1">
       <div style="font-size:12.5px;font-weight:600;color:#f8ece7">Atlas de la contraction</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:rgba(244,231,227,.4);line-height:1.5;margin-top:3px">du potentiel d'action au glissement</div>
     </div>
     <div style="color:#f2b389;font-size:12px">→</div>
-  </div>
+  </a>
 
   <div style="position:absolute;right:22px;bottom:24px;z-index:4;display:flex;align-items:baseline;gap:8px">
     <div data-field="1" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:rgba(244,231,227,.62);letter-spacing:.06em">90 µm</div>
