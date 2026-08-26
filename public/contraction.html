@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- Atlas des molecules : rendu des vraies structures PDB. Meme bibliotheque et
+     meme version que la plongee ADN, donc deja en cache si l'on vient de la. -->
+<script async src="https://cdn.jsdelivr.net/npm/3dmol@2/build/3Dmol-min.js"></script>
 <style>
 /* ============================================================================
    Page de test — Contraction du sarcomère
@@ -27,7 +30,8 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;color:var(--fg);font-family:var(--sans)}
-#stage{position:fixed;inset:0}
+#stage{position:fixed;inset:0;transition:opacity .3s var(--ease)}
+#stage.swap{opacity:0}
 #stage canvas{display:block;cursor:grab}
 #stage canvas:active{cursor:grabbing}
 
@@ -47,23 +51,97 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 .tab .n{font:400 10px/1 var(--mono);color:var(--accent);flex:none}
 .tab .s{display:block;margin-top:3px;font:400 10px/1.4 var(--mono);color:var(--fg-3)}
 
+/* ---- colonne de droite ----------------------------------------------------
+   Le commentaire change de longueur a chaque etape : tant qu'il etait libre de
+   grandir, tout ce qui suivait bougeait avec lui. On lui donne donc une hauteur
+   fixe — sa regle est poussee en bas de la boite, le texte defile a l'interieur
+   si besoin — et le tiroir prend tout ce qui reste. Plus rien ne se redimensionne
+   en cours d'animation, et le vide qui trainait sous le commentaire est repris
+   par le diaporama. */
+#rail{position:fixed;right:24px;top:20px;bottom:22px;z-index:5;width:322px;
+  display:flex;flex-direction:column;gap:12px;pointer-events:none}
+#rail>*{pointer-events:auto}
+#railFoot{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px;pointer-events:none}
+#railFoot>*{pointer-events:auto}
+
 /* ---- panneau de commentaire --------------------------------------------- */
-#note{position:fixed;right:24px;top:20px;z-index:5;width:322px;padding:15px 16px 16px;border-radius:11px;
+#note{flex:none;height:clamp(206px,29vh,336px);display:flex;flex-direction:column;overflow:hidden;
+  padding:15px 16px 16px;border-radius:11px;
   background:var(--glass);border:1px solid var(--line);box-shadow:0 22px 60px rgba(0,0,0,.5)}
+#note .body{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+#note .body::-webkit-scrollbar{width:6px}
+#note .body::-webkit-scrollbar-thumb{background:rgba(244,231,227,.13);border-radius:3px}
+#note .body.in{animation:noteIn .38s var(--ease)}
+@keyframes noteIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 #note .kick{font:400 9px/1.3 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--fg-3)}
 #note h2{margin:7px 0 0;font:500 15px/1.25 var(--sans);color:var(--fg)}
 #note p{margin:9px 0 0;font:400 12px/1.62 var(--sans);color:rgba(244,231,227,.82)}
-#note .rule{margin:13px 0 0;padding-top:11px;border-top:1px solid var(--line);
+#note .rule{flex:none;margin:13px 0 0;padding-top:11px;border-top:1px solid var(--line);
   font:400 10.5px/1.6 var(--mono);color:var(--fg-3)}
 #note .rule b{color:var(--accent);font-weight:400}
 
-/* ---- mesures (bandes A / I) --------------------------------------------- */
-#meas{position:fixed;right:24px;top:auto;bottom:210px;z-index:5;width:322px;padding:13px 16px;border-radius:11px;
-  background:var(--glass);border:1px solid var(--line)}
+/* ---- tiroir de l'atlas : un diaporama, une molecule a la fois -------------
+   Treize lignes de 38 pixels donnaient une liste a defiler ; une seule molecule
+   en grand se regarde. On garde l'acces aux douze autres par les fleches et les
+   pastilles — et par l'atlas, qui reste la vue complete. */
+#dock{flex:1 1 auto;min-height:250px;display:flex;flex-direction:column;overflow:hidden;
+  border-radius:11px;background:var(--glass);border:1px solid var(--line)}
+#dock .dkHead{flex:none;display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:12px 15px 9px;border-bottom:1px solid var(--line)}
+#dock .dkKick{font:400 9px/1.3 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--fg-3)}
+#dock .dkN{font:400 9px/1.3 var(--mono);color:var(--accent);flex:none;font-variant-numeric:tabular-nums}
+
+.dkSlide{flex:1;min-height:0;display:flex;flex-direction:column;width:100%;
+  padding:11px 15px 13px;border:0;background:none;color:inherit;cursor:pointer;text-align:left;
+  transition:background .18s}
+.dkSlide:hover{background:rgba(255,255,255,.035)}
+.dkFig{position:relative;flex:1;min-height:70px;display:grid;place-items:center;
+  border-radius:10px;overflow:hidden;transition:background .45s var(--ease)}
+.dkFig .dot{width:13px;height:13px;border-radius:50%;opacity:.7}
+.dkFig img{position:absolute;inset:7px;width:calc(100% - 14px);height:calc(100% - 14px);
+  object-fit:contain;opacity:0;transform:scale(.93);
+  transition:opacity .45s var(--ease),transform .45s var(--ease)}
+.dkFig img.in{opacity:1;transform:none}
+.dkCap{flex:none;padding-top:11px}
+.dkCap.in{animation:noteIn .4s var(--ease)}
+.dkKind{display:block;font:400 8.5px/1.3 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg-3)}
+.dkName{display:block;margin-top:5px;font:400 17px/1.2 var(--serif);color:var(--fg)}
+.dkSub{display:block;margin-top:4px;font:400 9.5px/1.45 var(--mono);color:var(--fg-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.dkNav{flex:none;display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid var(--line)}
+.dkArw{flex:none;width:26px;height:26px;border-radius:7px;cursor:pointer;display:grid;place-items:center;
+  border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--fg-2);
+  font:400 14px/1 var(--mono);transition:background .16s,color .16s,border-color .16s}
+.dkArw:hover{background:var(--accent-soft);border-color:rgba(240,162,115,.42);color:var(--fg)}
+.dkDots{flex:1;display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:5px}
+.dkDots button{width:6px;height:6px;padding:0;border:0;border-radius:50%;cursor:pointer;
+  background:rgba(244,231,227,.2);transition:background .2s var(--ease),transform .2s var(--ease)}
+.dkDots button:hover{background:rgba(244,231,227,.5)}
+.dkDots button[aria-current="true"]{background:var(--accent);transform:scale(1.55)}
+
+/* La forge : un viewer hors champ qui fabrique les images, une par une. */
+#thumbForge{position:fixed;left:-320px;top:-320px;width:192px;height:192px;opacity:0;pointer-events:none}
+#dockOpen{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:11px 15px;border:0;border-top:1px solid var(--line);background:var(--accent-soft);
+  color:var(--fg);cursor:pointer;font:500 11.5px/1 var(--sans);transition:background .18s}
+#dockOpen:hover{background:rgba(240,162,115,.26)}
+#dockOpen .arw{font:400 13px/1 var(--mono);color:var(--accent)}
+
+/* ---- mesures (bandes A / I) ---------------------------------------------- */
+#meas{flex:none;padding:13px 16px;border-radius:11px;background:var(--glass);border:1px solid var(--line)}
 #meas .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;
   font:400 11px/1.5 var(--mono);color:var(--fg-2)}
 #meas .row b{font-weight:400;color:var(--fg)}
 #meas .row .tag{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)}
+
+/* ---- bouton d'atlas de repli (ecrans etroits, ou le rail disparait) ------- */
+#atlasMini{display:none;position:fixed;right:24px;top:20px;z-index:6;align-items:center;gap:9px;
+  padding:9px 13px;border-radius:9px;cursor:pointer;
+  background:var(--glass);border:1px solid rgba(240,162,115,.34);color:var(--fg);
+  font:500 11.5px/1 var(--sans)}
+#atlasMini .arw{font:400 12px/1 var(--mono);color:var(--accent)}
 
 /* ---- schéma 2D, en écho de la planche du cours --------------------------- */
 #schema{position:fixed;left:50%;bottom:132px;z-index:5;transform:translateX(-50%);
@@ -111,15 +189,149 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 #back:hover{color:var(--fg);border-color:rgba(240,162,115,.42);transform:translateY(-2px)}
 @media (max-height:620px){ #back{display:none} }
 
+/* Mouvement reduit : on garde les fondus, on retire les deplacements. */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+
 /* ---- légende ------------------------------------------------------------- */
 #key{position:fixed;left:24px;bottom:22px;z-index:5;display:flex;flex-direction:column;gap:5px}
 #key div{display:flex;align-items:center;gap:8px;font:400 10px/1.4 var(--mono);color:var(--fg-2)}
 #key #keyMol{gap:3px;flex-wrap:wrap}
 #key i{width:9px;height:9px;border-radius:2px;flex:none}
 
+/* ============================================================================
+   ATLAS DES MOLECULES — panneau plein ecran
+   Trois colonnes : la liste, la structure, la fiche. Meme decoupage que l'atlas
+   des enzymes de la plongee ADN, mais dans la gamme de la fibre.
+   ========================================================================== */
+/* Toujours dispose, jamais toujours visible : `visibility` plutot que `display`,
+   pour que l'ouverture puisse se fondre — et, effet de bord bienvenu, pour que le
+   cadre du viewer ait une taille des le depart, ce dont 3Dmol a besoin. */
+#atlas{position:fixed;inset:0;z-index:20;
+  display:grid;grid-template-columns:264px minmax(0,1fr) 344px;grid-template-rows:auto minmax(0,1fr);
+  background:radial-gradient(120% 100% at 50% 0%,#2a121b 0%,#190d13 55%,#0d0609 100%);
+  opacity:0;visibility:hidden;pointer-events:none;transform:scale(.988);
+  transition:opacity .3s var(--ease),transform .3s var(--ease),visibility 0s .3s}
+#atlas.on{opacity:1;visibility:visible;pointer-events:auto;transform:none;
+  transition:opacity .32s var(--ease),transform .32s var(--ease),visibility 0s 0s}
+/* les trois colonnes entrent l'une apres l'autre */
+#atlas.on .axHead{animation:axRise .38s var(--ease) both}
+#atlas.on .axList{animation:axSlideL .44s .05s var(--ease) both}
+#atlas.on .axStage{animation:axRise .44s .09s var(--ease) both}
+#atlas.on .axFiche{animation:axSlideR .44s .13s var(--ease) both}
+@keyframes axSlideL{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+@keyframes axSlideR{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes axRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+#atlas .axHead{grid-column:1/-1;display:flex;align-items:center;gap:16px;
+  padding:16px 24px 15px;border-bottom:1px solid var(--line)}
+#atlas .axBack{flex:none;width:34px;height:34px;border-radius:9px;cursor:pointer;
+  display:grid;place-items:center;font-size:15px;line-height:1;
+  border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--fg-2);
+  transition:background .18s,border-color .18s,color .18s}
+#atlas .axBack:hover{background:var(--accent-soft);border-color:rgba(240,162,115,.42);color:var(--fg)}
+#atlas .axHeadTx{flex:1;min-width:0}
+#atlas .axHeadTx .kick{font:400 9px/1.3 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--fg-3)}
+#atlas .axHeadTx h2{margin:5px 0 0;font:400 21px/1.15 var(--serif);color:var(--fg)}
+#atlas .axHeadHint{flex:none;font:400 10px/1.4 var(--mono);color:var(--fg-3)}
+
+/* --- colonne de gauche : la liste ---------------------------------------- */
+#atlas .axList{grid-column:1;min-height:0;overflow-y:auto;padding:12px 10px 24px;
+  border-right:1px solid var(--line)}
+#atlas .axList::-webkit-scrollbar{width:7px}
+#atlas .axList::-webkit-scrollbar-thumb{background:rgba(244,231,227,.14);border-radius:4px}
+.axFam{padding:14px 8px 5px;font:400 8.5px/1.3 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg-3)}
+.axItem{display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;margin-bottom:2px;
+  border-radius:8px;cursor:pointer;text-align:left;color:var(--fg-2);
+  background:none;border:1px solid transparent;transition:background .16s,border-color .16s,color .16s}
+.axItem:hover{background:rgba(255,255,255,.06);color:var(--fg);transform:translateX(2px)}
+.axItem[aria-current="true"]{background:var(--accent-soft);border-color:rgba(240,162,115,.4);color:var(--fg)}
+.axItem i{width:9px;height:9px;border-radius:50%;flex:none}
+.axItem .tx{flex:1;min-width:0}
+.axItem .nm{display:block;font:500 12px/1.3 var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.axItem .sb{display:block;margin-top:2px;font:400 9.5px/1.35 var(--mono);color:var(--fg-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* --- colonne centrale : la structure ------------------------------------- */
+#atlas .axStage{grid-column:2;min-width:0;min-height:0;display:flex;flex-direction:column;padding:16px 18px 18px}
+#atlas .axView{position:relative;flex:1;min-height:0;border-radius:13px;overflow:hidden;
+  background:radial-gradient(90% 80% at 50% 25%,rgba(240,162,115,.07),rgba(0,0,0,0) 70%),rgba(0,0,0,.24);
+  border:1px solid var(--line)}
+#mol-viewer{position:absolute;inset:0;opacity:1;transition:opacity .26s var(--ease)}
+#mol-viewer.busy{opacity:.16}
+#mol-viewer canvas{display:block}
+#atlas .axHint{position:absolute;left:14px;bottom:12px;z-index:2;pointer-events:none;
+  font:400 9.5px/1.3 var(--mono);color:var(--fg-3)}
+#atlas .axLoad,#atlas .axErr{position:absolute;inset:0;z-index:3;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:rgba(21,12,17,.72);font:400 11px/1.5 var(--mono);color:var(--fg-2);text-align:center;padding:24px}
+#atlas .axLoad.on,#atlas .axErr.on{display:flex}
+#atlas .axLoad .sp{width:26px;height:26px;border-radius:50%;
+  border:2px solid rgba(240,162,115,.22);border-top-color:var(--accent);animation:axspin .8s linear infinite}
+@keyframes axspin{to{transform:rotate(360deg)}}
+#atlas .axErr .ic{font-size:24px;color:var(--accent)}
+#atlas .axErr button{margin-top:4px;padding:8px 14px;border-radius:9px;cursor:pointer;
+  border:1px solid rgba(240,162,115,.42);background:var(--accent-soft);color:var(--fg);font:400 11px/1 var(--mono)}
+#atlas .axChips{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-top:12px}
+.axChipSet{display:flex;gap:4px;padding:3px;border-radius:9px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
+.axChipLb{align-self:center;margin-right:2px;font:400 8.5px/1.3 var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--fg-3)}
+.axChip{padding:6px 10px;border-radius:7px;cursor:pointer;border:0;background:none;color:var(--fg-3);
+  font:400 10.5px/1 var(--mono);transition:background .16s,color .16s}
+.axChip:hover:not(:disabled){color:var(--fg-2);background:rgba(255,255,255,.06)}
+.axChip[aria-pressed="true"]{background:var(--accent-soft);color:var(--fg)}
+.axChip:disabled{opacity:.3;cursor:default}
+
+/* --- colonne de droite : la fiche ---------------------------------------- */
+#atlas .axFiche{grid-column:3;min-height:0;overflow-y:auto;padding:18px 20px 28px;
+  border-left:1px solid var(--line)}
+#atlas .axFiche::-webkit-scrollbar{width:7px}
+#atlas .axFiche::-webkit-scrollbar-thumb{background:rgba(244,231,227,.14);border-radius:4px}
+.fcIn{animation:fcIn .32s var(--ease)}
+@keyframes fcIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.fcKick{display:flex;align-items:center;gap:8px;font:400 9px/1.3 var(--mono);
+  letter-spacing:.18em;text-transform:uppercase;color:var(--fg-3)}
+.fcKick i{width:8px;height:8px;border-radius:50%;flex:none}
+.fcName{margin:9px 0 0;font:400 22px/1.15 var(--serif);color:var(--fg)}
+.fcSub{margin-top:5px;font:400 10.5px/1.5 var(--mono);color:var(--accent)}
+.fcTag{margin:14px 0 0;font:400 12.5px/1.62 var(--sans);color:rgba(244,231,227,.86)}
+.fcSecT{margin:20px 0 8px;font:400 8.5px/1.3 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg-3)}
+.fcRoles{margin:0;padding:0;list-style:none}
+.fcRoles li{position:relative;padding:0 0 0 15px;margin-bottom:7px;font:400 11.5px/1.6 var(--sans);color:var(--fg-2)}
+.fcRoles li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;
+  background:rgba(240,162,115,.6)}
+.fcStats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.fcStats div{background:rgba(28,15,20,.92);padding:9px 11px}
+.fcStats .k{font:400 8px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3)}
+.fcStats .v{margin-top:4px;font:400 11.5px/1.35 var(--sans);color:var(--fg)}
+.fcStruct{padding:11px 13px;border-radius:10px;background:rgba(255,255,255,.035);
+  border:1px solid var(--line);font:400 10.5px/1.6 var(--mono);color:var(--fg-2)}
+.fcNote{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);
+  font:400 10.5px/1.62 var(--mono);color:var(--fg-3)}
+.fcLink{display:inline-block;margin-top:16px;padding:8px 13px;border-radius:9px;text-decoration:none;
+  border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--fg-2);
+  font:400 10.5px/1 var(--mono);transition:color .18s,border-color .18s}
+.fcLink:hover{color:var(--fg);border-color:rgba(240,162,115,.42)}
+
 @media (max-width:1100px){
-  #note,#meas{display:none}
+  #rail{display:none}
+  #atlasMini{display:flex}
   #schema,#bar{width:calc(100% - 48px)}
+  #atlas{grid-template-columns:212px minmax(0,1fr) 300px}
+}
+@media (max-width:880px){
+  #atlas{grid-template-columns:196px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto}
+  #atlas .axFiche{grid-column:1/-1;grid-row:3;max-height:38vh;
+    border-left:0;border-top:1px solid var(--line);padding:14px 18px 20px}
+  #atlas .axHeadHint{display:none}
+}
+@media (max-width:560px){
+  #atlas{grid-template-columns:150px minmax(0,1fr)}
+  #atlas .axStage{padding:10px 10px 12px}
+  #atlas .axItem .sb{display:none}
 }
 @media (max-height:680px){ #schema{display:none} }
 @media (max-height:560px){ #key,#meas{display:none} }
@@ -151,18 +363,55 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
   </button>
 </div>
 
-<div id="note">
-  <div class="kick" id="noteKick">état</div>
-  <h2 id="noteTitle">Muscle relâché</h2>
-  <p id="noteText"></p>
-  <div class="rule" id="noteRule"></div>
+<!-- Colonne de droite : le commentaire, le tiroir de l'atlas, les mesures. Les
+     trois etaient poses chacun a son offset ; ils sont desormais empiles, donc
+     les mesures tombent en bas de l'ecran et le tiroir prend tout le milieu. -->
+<div id="rail">
+  <div id="note">
+    <div class="body" id="noteBody">
+      <div class="kick" id="noteKick">état</div>
+      <h2 id="noteTitle">Muscle relâché</h2>
+      <p id="noteText"></p>
+    </div>
+    <div class="rule" id="noteRule"></div>
+  </div>
+
+  <div id="railFoot">
+  <div id="dock">
+    <div class="dkHead">
+      <span class="dkKick">Molécules en jeu</span>
+      <span class="dkN" id="dkN"></span>
+    </div>
+    <button type="button" class="dkSlide" id="dkSlide">
+      <span class="dkFig" id="dkFig"></span>
+      <span class="dkCap" id="dkCap">
+        <span class="dkKind" id="dkKind"></span>
+        <span class="dkName" id="dkName"></span>
+        <span class="dkSub" id="dkSub"></span>
+      </span>
+    </button>
+    <div class="dkNav">
+      <button type="button" class="dkArw" id="dkPrev" aria-label="Molécule précédente">‹</button>
+      <div class="dkDots" id="dkDots"></div>
+      <button type="button" class="dkArw" id="dkNext" aria-label="Molécule suivante">›</button>
+    </div>
+    <button type="button" id="dockOpen">
+      <span>Ouvrir l'atlas des molécules</span>
+      <span class="arw">↗</span>
+    </button>
+  </div>
+
+  <div id="meas">
+    <div class="row"><span class="tag" id="t1">Bande A · myosine</span><b id="mA">—</b></div>
+    <div class="row"><span class="tag" id="t2">Bande I · actine seule</span><b id="mI">—</b></div>
+    <div class="row"><span class="tag" id="t3">Sarcomère · Z à Z</span><b id="mZ">—</b></div>
+  </div>
+  </div>
 </div>
 
-<div id="meas">
-  <div class="row"><span class="tag" id="t1">Bande A · myosine</span><b id="mA">—</b></div>
-  <div class="row"><span class="tag" id="t2">Bande I · actine seule</span><b id="mI">—</b></div>
-  <div class="row"><span class="tag" id="t3">Sarcomère · Z à Z</span><b id="mZ">—</b></div>
-</div>
+<div id="thumbForge" aria-hidden="true"></div>
+
+<button type="button" id="atlasMini"><span>Molécules</span><span class="arw">↗</span></button>
 
 <div id="schema">
   <div class="cap">Vue schématique — en écho de la planche du cours</div>
@@ -195,6 +444,39 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
     <i style="background:#f0901f;border-radius:50%;margin-left:6px"></i>Pi
     <i style="background:#7fe0a0;border-radius:50%;margin-left:6px"></i>Ca²⁺
   </div>
+</div>
+
+<!-- ------------------------------------------------------ ATLAS DES MOLECULES
+     Plein ecran par-dessus l'animation : la liste a gauche, la vraie structure
+     PDB au centre, la fiche a droite. L'animation est mise en pause tant que le
+     panneau est ouvert — inutile de faire tourner deux rendus 3D a la fois. -->
+<div id="atlas" aria-hidden="true">
+  <header class="axHead">
+    <button type="button" class="axBack" id="axBack" aria-label="Revenir à l'animation">←</button>
+    <div class="axHeadTx">
+      <div class="kick">Atlas des molécules · <span id="axCount"></span></div>
+      <h2>Qui fait la contraction ?</h2>
+    </div>
+    <div class="axHeadHint">échap pour revenir à l'animation</div>
+  </header>
+
+  <nav class="axList" id="axList" aria-label="Molécules de la contraction"></nav>
+
+  <section class="axStage">
+    <div class="axView">
+      <div id="mol-viewer"></div>
+      <span class="axHint">glisser = pivoter · molette = zoom</span>
+      <div class="axLoad" id="axLoad"><span class="sp"></span><span id="axLoadTx">chargement…</span></div>
+      <div class="axErr" id="axErr">
+        <div class="ic">⚠</div>
+        <div id="axErrTx"></div>
+        <button type="button" id="axRetry">Réessayer</button>
+      </div>
+    </div>
+    <div class="axChips" id="axChips"></div>
+  </section>
+
+  <aside class="axFiche" id="axFiche"></aside>
 </div>
 
 <script type="module">
@@ -778,6 +1060,20 @@ const REGLE_B = "<b>Un pas = un monomère.</b> La course du levier vaut 5,2 à 5
 const el = (id) => document.getElementById(id);
 const noteKick = el('noteKick'), noteTitle = el('noteTitle'), noteText = el('noteText'), noteRule = el('noteRule');
 const fill = el('fill'), knob = el('knob'), track = el('track'), ticks = el('ticks');
+const noteBody = el('noteBody');
+/* Le panneau est reecrit a chaque image ; on ne rejoue le fondu que quand
+   l'etape change vraiment, sinon l'animation repartirait a chaque image. */
+let noteKey = '';
+function setNote(kick, titre, txt) {
+  noteKick.textContent = kick;
+  if (titre === noteKey) return;
+  noteKey = titre;
+  noteTitle.textContent = titre;
+  noteText.textContent = txt;
+  noteBody.classList.remove('in');
+  void noteBody.offsetWidth;          // on force le recalcul, sinon l'animation ne repart pas
+  noteBody.classList.add('in');
+}
 const lab = el('lab'), playBtn = el('play');
 
 const SPAN_A = 2;        // scène 1 : 0→1 la contraction, 1→2 le relâchement
@@ -823,9 +1119,16 @@ function setScene(n) {
   t = 0;
   coupsFaits = 0;
   cam.tRad = n === 0 ? 7.6 : 8.4;
+  // la bascule est instantanee dans la scene 3D : un battement de paupiere la rend lisible
+  noteKey = '';
+  host.classList.add('swap');
+  setTimeout(() => host.classList.remove('swap'), 150);
+  window.dispatchEvent(new CustomEvent('scene:change', { detail: n }));
 }
 el('tab0').addEventListener('click', () => setScene(0));
 el('tab1').addEventListener('click', () => setScene(1));
+/* Le routeur vit dans l'autre module : on lui donne de quoi lire et ecrire la scene. */
+window.__ctrScene = { get: () => scene_, set: (v) => setScene(v) };
 playBtn.addEventListener('click', () => {
   // au bout de la scène 1, lecture veut dire « rejouer » : sans ça le bouton
   // semblait mort une fois la contraction terminée.
@@ -933,10 +1236,18 @@ resize();
 /* ============================================================================
    9. BOUCLE
    ========================================================================== */
+/* Quand l'atlas des molécules est ouvert, l'animation passe en veille : la scène
+   n'est plus visible, et faire tourner deux rendus 3D à la fois pour un seul
+   écran affiché n'apporte rien. */
+let inBackground = false;
+window.addEventListener('atlas:open', () => { inBackground = true; });
+window.addEventListener('atlas:close', () => { inBackground = false; });
+
 let last = 0;
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (last || now)) / 1000); last = now;
+  if (inBackground) return;
 
   if (playing) {
     if (scene_ === 0) {
@@ -969,7 +1280,7 @@ function loop(now) {
     const e = relache
       ? (RELACHE.find(s => (t - 1) < s.seuil) || RELACHE[1])
       : (ETATS.find(s => c < s.seuil) || ETATS[2]);
-    noteKick.textContent = e.kick; noteTitle.textContent = e.titre; noteText.textContent = e.txt;
+    setNote(e.kick, e.titre, e.txt);
     const zx = lerp(SARCO.Z0, SARCO.ZMIN, c);
     // « µm » : le sarcomère fait environ 2 µm au repos, on cale l'échelle dessus
     const K = 2.0 / (SARCO.Z0 * 2);
@@ -987,8 +1298,7 @@ function loop(now) {
     const d = TEMPS[ph.step];
     const tete = ph.step === 0 ? '' : ' · tête ' + (PONT.activeHead() ? 'B' : 'A');
     const num = ph.step === 0 ? '' : ' · coup ' + (coup + 1);
-    noteKick.textContent = d.kick + tete + num;
-    noteTitle.textContent = d.titre; noteText.textContent = d.txt;
+    setNote(d.kick + tete + num, d.titre, d.txt);
     lab.textContent = ph.step === 0
       ? 'Déclencheur — ' + d.titre
       : 'Coup ' + (coup + 1) + ' · tête ' + (PONT.activeHead() ? 'B' : 'A') + ' — ' + d.titre;
@@ -1010,6 +1320,682 @@ function loop(now) {
 }
 setScene(0);
 requestAnimationFrame(loop);
+</script>
+
+<script type="module">
+/* ============================================================================
+   ATLAS DES MOLÉCULES DE LA CONTRACTION
+   L'animation montre des formes simplifiées — des cylindres, des sphères, des
+   pastilles de couleur. Ce panneau montre les vraies molécules : les structures
+   déposées au Protein Data Bank, servies depuis public/pdb/ comme les seize
+   structures de l'atlas des enzymes de la plongée ADN.
+
+   Le rendu est confié à 3Dmol (même CDN, même version que la page principale :
+   si l'on vient de la plongée, la bibliothèque est déjà en cache). three.js ne
+   sait pas dessiner un ruban de structure secondaire, et l'écrire ici pour une
+   seule page n'aurait pas de sens.
+   ========================================================================== */
+
+/* Les entrées. `code` + `fmt` désignent le fichier de public/pdb/ ; `focus`
+   marque les entrées qui ne sont pas une protéine mais ce qu'elle tient — le
+   calcium n'a pas de forme propre, on le montre là où il agit. */
+const MOLS = [
+  { id: 'actineG', fam: 'Filament fin', code: '1J6Z', fmt: 'pdb', accent: '#e9b48f',
+    name: 'Actine G', sub: 'le monomère du filament mince',
+    tagline: "Une bille de 42 kDa. C'est elle qui porte le site où la tête de myosine vient s'accrocher, et c'est en s'empilant qu'elle fait le filament mince.",
+    struct: 'Actine non complexée · rayons X · 1,54 Å',
+    roles: [
+      "S'assemble en double hélice pour former le filament mince",
+      'Porte le site de liaison de la tête de myosine, masqué au repos',
+      'Espacés de 5,5 nm : un monomère = exactement un coup de rame'
+    ],
+    stats: [['MASSE', '≈ 42 kDa'], ['DIAMÈTRE', '≈ 7 nm'], ['PAS', '5,5 nm'], ['LIGAND', 'ATP ou ADP']],
+    note: 'Le nucléotide est logé au fond de la fente centrale : il apparaît en bâtons au cœur de la molécule.' },
+
+  { id: 'actineF', fam: 'Filament fin', code: '6BNO', fmt: 'pdb', accent: '#e0a074',
+    name: "Filament d'actine", sub: 'actine F · huit monomères',
+    tagline: "Les monomères polymérisés : la corde à deux brins que les têtes de myosine tirent vers la ligne M. Aucun monomère ne bouge par rapport à ses voisins — c'est le filament entier qui glisse.",
+    struct: "Filament d'actine nu · cryo-microscopie électronique · 5,5 Å",
+    roles: [
+      "Montre comment les monomères s'emboîtent en hélice",
+      'Les deux brins se croisent tous les 36 nm environ',
+      'Ancré par une extrémité sur la strie Z, libre par l’autre'
+    ],
+    stats: [['CHAÎNES', '8 monomères'], ['CROISEMENT', '≈ 36 nm'], ['DIAMÈTRE', '7 à 9 nm'], ['DANS LE MUSCLE', '≈ 1 µm de long']],
+    note: 'Colorez par chaîne : les monomères alternent d’un brin à l’autre, la double hélice se détache aussitôt.' },
+
+  { id: 'tropomyosine', fam: 'Filament fin', code: '1C1G', fmt: 'pdb', accent: '#6fbf9a',
+    name: 'Tropomyosine', sub: 'le câble qui masque les sites',
+    tagline: "Deux hélices enroulées l'une sur l'autre sur 40 nm, couchées dans le sillon du filament d'actine. Au repos elle couvre les sites de liaison ; quand le calcium arrive, elle pivote et les découvre.",
+    struct: 'Tropomyosine entière · rayons X · 7,0 Å',
+    roles: [
+      'Au repos, bloque les sites de fixation de la myosine',
+      "Une molécule couvre sept monomères d'actine à la fois",
+      'Pivote sous la commande de la troponine chargée en Ca²⁺'
+    ],
+    stats: [['FORME', 'super-hélice à 2 brins'], ['LONGUEUR', '≈ 40 nm'], ['COUVRE', '7 actines'], ['LISSE', 'présente, rôle mécanique']],
+    note: "7 Å, c'est une basse résolution : on lit la forme du câble, pas le détail des chaînes latérales. Ici c'est la forme qui compte." },
+
+  { id: 'troponine', fam: 'Filament fin', code: '1J1E', fmt: 'pdb', accent: '#d8b04a',
+    name: 'Complexe de troponine', sub: 'le capteur de calcium',
+    tagline: "Trois sous-unités qui travaillent ensemble : TnC fixe le calcium, TnI bloque, TnT tient la tropomyosine. C'est l'interrupteur de toute la contraction.",
+    struct: 'Domaine de 52 kDa de la troponine cardiaque humaine, saturée en Ca²⁺ · rayons X · 3,3 Å',
+    roles: [
+      'TnC fixe le Ca²⁺ libéré par le réticulum sarcoplasmique',
+      'Le complexe change de forme et tire sur la tropomyosine',
+      'Sans Ca²⁺, TnI maintient le système verrouillé'
+    ],
+    stats: [['SOUS-UNITÉS', 'TnC · TnI · TnT'], ['MASSE', '≈ 52 kDa'], ['FIXE', 'jusqu’à 4 Ca²⁺'], ['LISSE', 'absente — calmoduline']],
+    note: 'Colorez par chaîne : la structure contient deux exemplaires du complexe, soit six chaînes en tout.' },
+
+  { id: 'calcium', fam: 'Signal calcique', code: '1J1E', fmt: 'pdb', accent: '#7fe0a0',
+    name: 'Ion Ca²⁺', sub: 'le signal, dans la main de la troponine',
+    focus: { sel: { resn: 'CA', hetflag: true }, color: '#7fe0a0' },
+    tagline: "Un ion n'a pas de forme à montrer : on le montre là où il agit. La protéine passe en sourdine, les six ions calcium logés dans la troponine restent seuls éclairés.",
+    struct: 'Ions Ca²⁺ liés à la troponine cardiaque · rayons X · 3,3 Å',
+    roles: [
+      "Libéré par le réticulum sarcoplasmique au passage du potentiel d'action",
+      "Se fixe sur la troponine C : c'est lui qui déclenche tout",
+      'Repompé activement par la SERCA — ce retour est le relâchement'
+    ],
+    stats: [['CHARGE', '2+'], ['RAYON', '≈ 100 pm'], ['ICI', '6 ions'], ['SIGNAL', '× 100 en une milliseconde']],
+    note: 'Les boutons de représentation et de couleur sont sans effet sur cette entrée : elle a sa mise en scène à elle.' },
+
+  { id: 'myosine', fam: 'Filament épais', code: '2MYS', fmt: 'pdb', accent: '#e2606c',
+    name: 'Tête de myosine', sub: 'fragment S1 · le moteur',
+    tagline: "La tête globulaire, son col, et les deux chaînes légères qui rigidifient le col en levier. C'est cette pièce qui hydrolyse l'ATP et qui rame.",
+    struct: 'Sous-fragment 1 de la myosine II du muscle squelettique · rayons X · 2,8 Å',
+    roles: [
+      "Hydrolyse l'ATP et convertit l'énergie chimique en mouvement",
+      "Se fixe sur l'actine : la liaison formée est le pont d'union",
+      "La course du levier vaut 5,2 à 5,5 nm — un monomère d'actine"
+    ],
+    stats: [['MASSE', '≈ 130 kDa'], ['COURSE', '5,2 à 5,5 nm'], ['FORCE', '3 à 5 pN'], ['PAR FILAMENT', '≈ 300 molécules']],
+    note: "Les deux chaînes légères n'ont été déposées qu'en carbones α : elles apparaissent en trace fine, sans ruban plein. Ce n'est pas un défaut d'affichage." },
+
+  { id: 'atp', fam: 'Énergie', code: 'ATP', fmt: 'sdf', kind: 'ligand', accent: '#f0d264',
+    name: 'ATP', sub: 'adénosine triphosphate',
+    tagline: "La grosse pastille jaune de l'animation, en vrai : 47 atomes, trois phosphates en file. C'est la liaison entre les deux derniers qui porte l'énergie.",
+    struct: 'Modèle idéalisé du ligand ATP — dictionnaire chimique du PDB',
+    roles: [
+      'Se loge dans la poche à nucléotide de la tête de myosine',
+      "Son hydrolyse arme le levier — c'est le temps 2 du cycle",
+      "Un ATP neuf détache la tête de l'actine — c'est le temps 5"
+    ],
+    stats: [['ATOMES', '47'], ['FORMULE', 'C₁₀H₁₆N₅O₁₃P₃'], ['MASSE', '507 g/mol'], ['RÉSERVE', '4 à 6 s de contraction']],
+    note: "Sans ATP, la tête reste collée à l'actine : c'est la rigidité cadavérique." },
+
+  { id: 'adp', fam: 'Énergie', code: 'ADP', fmt: 'sdf', kind: 'ligand', accent: '#d9a94e',
+    name: 'ADP', sub: 'ce qui reste après l’hydrolyse',
+    tagline: "Un phosphate de moins que l'ATP, et cinq atomes de moins. Le Pi libéré part le premier, l'ADP ensuite — et c'est entre les deux que le levier bascule.",
+    struct: 'Modèle idéalisé du ligand ADP — dictionnaire chimique du PDB',
+    roles: [
+      "Produit de l'hydrolyse, avec le phosphate inorganique (Pi)",
+      'Reste logé dans la poche pendant la formation du pont',
+      'Sa sortie accompagne la bascule du levier — le temps 4'
+    ],
+    stats: [['ATOMES', '42'], ['FORMULE', 'C₁₀H₁₅N₅O₁₀P₂'], ['MASSE', '427 g/mol'], ['REGÉNÉRÉ PAR', '3 voies, très rapides']],
+    note: "Comparez avec l'ATP : la seule différence visible est le phosphate du bout." },
+
+  { id: 'titine', fam: 'Charpente du sarcomère', code: '1TIT', fmt: 'pdb', accent: '#8fd0b0',
+    name: 'Titine', sub: 'un maillon du ressort',
+    tagline: 'La titine entière compte près de 27 000 acides aminés — la plus grosse protéine du corps humain. On en montre un maillon : le domaine Ig I27, un sur environ trois cents.',
+    struct: 'Titine, répétition Ig 27 · RMN · structure moyenne minimisée',
+    roles: [
+      'Relie la strie Z au bout du filament épais',
+      "Les maillons se déplient l'un après l'autre sous l'étirement",
+      'Recentre les filaments quand la traction cesse'
+    ],
+    stats: [['MAILLON', 'domaine Ig I27'], ['MOLÉCULE ENTIÈRE', '≈ 3 700 kDa'], ['LONGUEUR', "jusqu'à 1 µm"], ['ÉTIREMENT', '± 30 %']],
+    note: "C'est la seule pièce du sarcomère dont la longueur change vraiment : les myofilaments, eux, ne s'allongent ni ne raccourcissent." },
+
+  { id: 'actinine', fam: 'Charpente du sarcomère', code: '1QUU', fmt: 'pdb', accent: '#f0d3c0',
+    name: 'α-actinine', sub: 'le rivet de la strie Z',
+    tagline: "Un dimère en bâton, monté tête-bêche, qui ponte les filaments minces de deux sarcomères voisins. C'est ce pontage répété qui donne à la strie Z son aspect en zigzag.",
+    struct: "Deux répétitions centrales de type spectrine de l'α-actinine · rayons X · 2,2 Å",
+    roles: [
+      'Ancre les filaments minces sur la strie Z',
+      'Relie bout à bout deux sarcomères consécutifs',
+      "Transmet la traction d'un sarcomère au suivant"
+    ],
+    stats: [['FORME', 'dimère antiparallèle'], ['LONGUEUR', '≈ 35 nm'], ['MONTRÉ', 'le bâton central'], ['FAMILLE', 'spectrines']],
+    note: "Seul le bâton central a été cristallisé : les deux têtes qui saisissent l'actine sont aux extrémités, hors de cette structure." },
+
+  { id: 'dhpr', fam: 'Signal calcique', code: '5GJV', fmt: 'pdb', accent: '#5a9ed6',
+    name: 'Récepteur DHP', sub: 'le capteur de voltage du tubule T',
+    tagline: 'Planté dans la membrane du tubule transverse, il sent la dépolarisation qui arrive et pousse mécaniquement le canal du réticulum, juste en face.',
+    struct: 'Complexe Cav1.1 de mammifère · cryo-microscopie électronique · 3,6 Å',
+    roles: [
+      "Détecte le potentiel d'action conduit par le tubule T",
+      'Change de forme et ouvre le canal calcique du réticulum',
+      'Dans le squelettique la commande est mécanique — pas besoin de Ca²⁺ extérieur'
+    ],
+    stats: [['AUTRE NOM', 'récepteur aux dihydropyridines'], ['CHAÎNES', '5 sous-unités'], ['CANAL', 'Ca²⁺ voltage-dépendant'], ['CARDIAQUE', 'commande par le Ca²⁺ entrant']],
+    note: "C'est la moitié « tubule T » de la triade. L'autre moitié est le récepteur à la ryanodine." },
+
+  { id: 'ryr', fam: 'Signal calcique', code: '3J8H', fmt: 'cif', accent: '#8a79c8',
+    name: 'Récepteur à la ryanodine', sub: 'la vanne du réticulum',
+    tagline: "Le plus gros canal ionique connu : un champignon de 2,2 MDa fait de quatre sous-unités identiques. Sa partie cytoplasmique est le « pied » qu'on voit entre la citerne et le tubule T.",
+    struct: 'RyR1 de lapin en complexe avec FKBP12 · cryo-microscopie électronique · 3,8 Å',
+    roles: [
+      'Canal calcique de la membrane du réticulum sarcoplasmique',
+      'Ouvert par le récepteur DHP, il vide le Ca²⁺ dans le sarcoplasme',
+      'Se referme aussitôt : la libération dure une fraction de milliseconde'
+    ],
+    stats: [['MASSE', '≈ 2 200 kDa'], ['ATOMES', '111 160'], ['SOUS-UNITÉS', '4 identiques'], ['FORME', 'champignon']],
+    note: 'Structure lourde — 12 Mo, cent mille atomes : comptez une seconde ou deux de chargement, et préférez le ruban à la surface.' },
+
+  { id: 'serca', fam: 'Signal calcique', code: '1SU4', fmt: 'pdb', accent: '#7fd0e8',
+    name: 'Pompe SERCA', sub: 'le retour du calcium',
+    tagline: "La pompe qui remet le Ca²⁺ dans le réticulum, contre son gradient — et qui consomme de l'ATP pour le faire. Le relâchement du muscle est un travail actif, pas un ressort qui se détend.",
+    struct: 'Ca²⁺-ATPase avec deux ions calcium liés · rayons X · 2,4 Å',
+    roles: [
+      'Transport actif : elle remonte le Ca²⁺ contre son gradient',
+      "Deux Ca²⁺ transportés par molécule d'ATP hydrolysée",
+      "Son arrêt laisserait le muscle contracté : c'est elle qui commande le relâchement"
+    ],
+    stats: [['MASSE', '≈ 110 kDa'], ['RENDEMENT', '2 Ca²⁺ par ATP'], ['SITUÉE DANS', 'la membrane du RS'], ['CONSOMME', "de l'ATP, comme la contraction"]],
+    note: 'Les deux ions transportés sont visibles au milieu de la partie membranaire, en bâtons.' }
+];
+/* ---------------------------------------------------------------- STRUCTURES
+   On sert d'abord le fichier local (public/pdb/ → dist/pdb/), avec plusieurs
+   essais : un rechargement à chaud peut couper une requête en vol. RCSB n'est
+   qu'un ultime secours, pour le cas où le dossier local manquerait. */
+const AA = ['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE', 'LEU', 'LYS',
+  'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 'TYR', 'VAL', 'MSE', 'SEC', 'PYL'];
+const cache = {};
+
+const remoteURL = (m, fmt) => m.fmt === 'sdf'
+  ? 'https://files.rcsb.org/ligands/download/' + m.code + '_ideal.sdf'
+  : 'https://files.rcsb.org/download/' + m.code + '.' + fmt;
+
+async function fetchStruct(m) {
+  const key = m.code + '.' + m.fmt;
+  if (cache[key]) return cache[key];
+  for (let a = 0; a < 3; a++) {
+    try {
+      const r = await fetch('pdb/' + key, { cache: a ? 'reload' : 'force-cache' });
+      if (r.ok) {
+        const t = await r.text();
+        if (t && t.length > 120) return (cache[key] = { data: t, format: m.fmt });
+      }
+    } catch (e) { }
+    if (a < 2) await new Promise(res => setTimeout(res, 200));
+  }
+  for (const fmt of m.fmt === 'sdf' ? ['sdf'] : [m.fmt, m.fmt === 'pdb' ? 'cif' : 'pdb']) {
+    try {
+      const r = await fetch(remoteURL(m, fmt));
+      if (r.ok) {
+        const t = await r.text();
+        if (t && t.length > 120) return (cache[key] = { data: t, format: fmt });
+      }
+    } catch (e) { }
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------- VIEWER */
+const ax = (id) => document.getElementById(id);
+const atlasEl = ax('atlas');
+let viewer = null, booted = false, token = 0, cur = -1, opened = false;
+const vstate = { rep: 'cartoon', color: 'spectrum', spin: true };
+
+function bootViewer(cb) {
+  if (booted) { cb(); return; }
+  const tryBoot = () => {
+    const host2 = ax('mol-viewer');
+    if (window.$3Dmol && host2 && host2.clientWidth) {
+      try {
+        viewer = $3Dmol.createViewer(host2, { backgroundColor: '#150c11', backgroundAlpha: 0 });
+        viewer.setBackgroundColor(0x150c11, 0);
+        booted = true;
+        cb();
+      } catch (e) { showLoad(false); showErr('viewer'); }
+    } else setTimeout(tryBoot, 120);
+  };
+  tryBoot();
+}
+function showLoad(on, tx) {
+  ax('axLoad').classList.toggle('on', !!on);
+  if (tx) ax('axLoadTx').textContent = tx;
+}
+function showErr(what) {
+  const e = ax('axErr');
+  if (!what) { e.classList.remove('on'); return; }
+  e.classList.add('on');
+  ax('axErrTx').innerHTML = what === 'viewer'
+    ? "Le moteur de rendu 3D n'a pas pu démarrer.<br>Vérifiez la connexion, puis réessayez."
+    : 'Impossible de charger la structure <b>' + what + '</b>.';
+}
+
+/* La mise en scène. Trois cas : un ligand (toujours en bâtons — un ruban n'a pas
+   de sens sur 47 atomes), une entrée « focus » où la protéine s'efface derrière
+   ce qu'elle tient, et le cas courant. */
+function styleView() {
+  const m = MOLS[cur];
+  if (!viewer || !m) return;
+  const cs = () => vstate.color === 'ss' ? { colorscheme: 'ssJmol' }
+    : vstate.color === 'chain' ? { colorscheme: 'chain' }
+      : { color: 'spectrum' };
+  try {
+    viewer.removeAllSurfaces();
+    viewer.setStyle({}, {});
+    if (m.kind === 'ligand') {
+      viewer.setStyle({}, { stick: { radius: 0.15, colorscheme: 'default' }, sphere: { scale: 0.26, colorscheme: 'default' } });
+    } else if (m.focus) {
+      viewer.setStyle({ resn: AA }, { cartoon: { color: '#7a6068', opacity: 0.5 } });
+      viewer.setStyle({ resn: ['HOH', 'WAT', 'DOD'] }, {});
+      viewer.setStyle(m.focus.sel, { sphere: { scale: 1.7, color: m.focus.color } });
+    } else {
+      if (vstate.rep === 'stick') viewer.setStyle({ resn: AA }, { stick: Object.assign({ radius: 0.14 }, cs()) });
+      else if (vstate.rep === 'sphere') viewer.setStyle({ resn: AA }, { sphere: Object.assign({ scale: 0.3 }, cs()) });
+      else viewer.setStyle({ resn: AA }, { cartoon: cs() });     // le ruban sert aussi de base à la surface
+      viewer.setStyle({ hetflag: true }, { stick: { radius: 0.18, colorscheme: 'default' }, sphere: { scale: 0.28, colorscheme: 'default' } });
+      viewer.setStyle({ resn: ['HOH', 'WAT', 'DOD'] }, {});
+      if (vstate.rep === 'surface') viewer.addSurface($3Dmol.SurfaceType.VDW, Object.assign({ opacity: 0.82 }, cs()), { resn: AA });
+    }
+    viewer.render();
+  } catch (e) { }
+}
+
+async function show(i) {
+  const m = MOLS[i];
+  if (!m) return;
+  cur = i;
+  const tok = ++token;
+  route();
+  syncList();
+  paintFiche(m);
+  paintChips(m);
+  showErr(null);
+  const mv = ax('mol-viewer');
+  mv.classList.add('busy');
+  const done = () => { if (tok === token) { clearTimeout(slow); showLoad(false); mv.classList.remove('busy'); } };
+  // le voile ne s'affiche qu'au-delà de 180 ms : sur une structure légère il
+  // n'aurait fait que clignoter
+  const slow = setTimeout(() => { if (tok === token) showLoad(true, 'chargement de ' + m.code + '…'); }, 180);
+  const entry = await fetchStruct(m);
+  if (tok !== token) return;
+  if (!entry) { done(); showErr(m.code); return; }
+  if (!viewer) { done(); return; }
+  try {
+    viewer.removeAllSurfaces(); viewer.removeAllModels(); viewer.removeAllShapes(); viewer.removeAllLabels();
+    viewer.addModel(entry.data, entry.format);
+  } catch (e) { done(); showErr(m.code); return; }
+  styleView();
+  try { viewer.zoomTo(); } catch (e) { }
+  try { viewer.render(); } catch (e) { }
+  try { vstate.spin ? viewer.spin('y', 0.6) : viewer.spin(false); } catch (e) { }
+  done();
+}
+
+/* ---------------------------------------------------------------------- HUD */
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/* L'ordre de lecture des familles ne suit pas celui des entrées : le calcium est
+   décrit juste après la troponine, qui le tient, mais il se range avec le reste
+   du couplage excitation-contraction. */
+const FAM_ORDER = ['Filament fin', 'Filament épais', 'Énergie', 'Charpente du sarcomère', 'Signal calcique'];
+const FAMS = FAM_ORDER.map(name => ({ name, items: MOLS.filter(m => m.fam === name) }))
+  .filter(f => f.items.length);
+
+/* --------------------------------------------------------------- LE DIAPORAMA
+   Une molécule à la fois, en grand. L'ordre suit celui de l'atlas — les familles
+   dans l'ordre de lecture — pour que le défilement raconte la même chose que la
+   liste. Les images viennent de la forge, plus bas. */
+const SLIDES = FAMS.reduce((acc, f) => acc.concat(f.items), []);
+const thumbURI = {};
+let dkIdx = 0, dkTimer = null, dkTouche = false;
+
+function paintDots() {
+  const box = ax('dkDots');
+  box.innerHTML = '';
+  SLIDES.forEach((m, k) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = m.name;
+    b.setAttribute('aria-label', m.name);
+    b.style.background = k === dkIdx ? m.accent : '';
+    b.addEventListener('click', () => { manuel(); showSlide(k); });
+    box.appendChild(b);
+  });
+  syncDots();
+}
+function syncDots() {
+  [...ax('dkDots').children].forEach((b, k) => {
+    const on = k === dkIdx;
+    b.setAttribute('aria-current', on ? 'true' : 'false');
+    b.style.background = on ? SLIDES[k].accent : '';
+  });
+}
+
+function showSlide(k) {
+  dkIdx = (k + SLIDES.length) % SLIDES.length;
+  const m = SLIDES[dkIdx];
+  const fig = ax('dkFig'), cap = ax('dkCap');
+  fig.style.background = m.accent + '12';
+  fig.innerHTML = '<span class="dot" style="background:' + m.accent + '"></span>';
+  const uri = thumbURI[m.id];
+  if (uri) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.decoding = 'async';
+    img.src = uri;
+    fig.appendChild(img);
+    setTimeout(() => img.classList.add('in'), 24);
+  }
+  ax('dkKind').textContent = m.fam;
+  ax('dkName').textContent = m.name;
+  ax('dkSub').textContent = m.code + ' · ' + m.sub;
+  ax('dkSlide').title = m.name + ' — ouvrir la fiche';
+  cap.classList.remove('in');
+  void cap.offsetWidth;
+  cap.classList.add('in');
+  ax('dkN').textContent = (dkIdx + 1) + ' / ' + SLIDES.length;
+  syncDots();
+}
+
+/* Le defilement automatique s'arrete des qu'on y touche : un carrousel qui
+   continue a tourner pendant qu'on le lit est insupportable. */
+const doux = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function autoOn() { if (dkTouche || !doux || dkTimer) return; dkTimer = setInterval(() => showSlide(dkIdx + 1), 6200); }
+function autoOff() { if (dkTimer) { clearInterval(dkTimer); dkTimer = null; } }
+function manuel() { dkTouche = true; autoOff(); }
+
+function paintDock() {
+  // les images deja fabriquees lors d'une visite precedente sont reprises tout de
+  // suite : sans ca la premiere molecule resterait une pastille pendant une seconde
+  MOLS.forEach(m => { const u = lsGet(THUMB_KEY + m.id); if (u) thumbURI[m.id] = u; });
+  paintDots();
+  showSlide(0);
+  ax('axCount').textContent = MOLS.length + ' structures réelles';
+  ax('dkPrev').addEventListener('click', () => { manuel(); showSlide(dkIdx - 1); });
+  ax('dkNext').addEventListener('click', () => { manuel(); showSlide(dkIdx + 1); });
+  ax('dkSlide').addEventListener('click', () => openAtlas(MOLS.indexOf(SLIDES[dkIdx])));
+  const dk = ax('dock');
+  dk.addEventListener('pointerenter', autoOff);
+  dk.addEventListener('pointerleave', autoOn);
+  autoOn();
+}
+
+/* La liste de l'atlas plein écran. Construite une seule fois : la refaire à chaque
+   molécule perdait la position de défilement et rejouait les animations d'entrée. */
+let listBtns = null;
+function paintList() {
+  if (listBtns) { syncList(); return; }
+  listBtns = {};
+  const box = ax('axList');
+  box.innerHTML = '';
+  FAMS.forEach(f => {
+    const h = document.createElement('div');
+    h.className = 'axFam';
+    h.textContent = f.name;
+    box.appendChild(h);
+    f.items.forEach(m => {
+      const i = MOLS.indexOf(m);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'axItem';
+      b.innerHTML = '<i style="background:' + m.accent + '"></i>'
+        + '<span class="tx"><span class="nm">' + esc(m.name) + '</span>'
+        + '<span class="sb">' + esc(m.code) + ' · ' + esc(m.sub) + '</span></span>';
+      b.addEventListener('click', () => show(i));
+      listBtns[i] = b;
+      box.appendChild(b);
+    });
+  });
+  syncList();
+}
+function syncList() {
+  if (!listBtns) return;
+  Object.keys(listBtns).forEach(k => {
+    const on = Number(k) === cur;
+    listBtns[k].setAttribute('aria-current', on ? 'true' : 'false');
+    if (on) { try { listBtns[k].scrollIntoView({ block: 'nearest' }); } catch (e) { } }
+  });
+}
+
+/* Les boutons d'affichage. Ils sont désactivés là où ils n'ont pas de sens :
+   pas de ruban sur un ligand, pas de coloration sur l'entrée du calcium. */
+const REPS = [['cartoon', 'ruban'], ['stick', 'bâtons'], ['sphere', 'sphères'], ['surface', 'surface']];
+const COLS = [['spectrum', 'spectre'], ['chain', 'chaîne'], ['ss', 'structure']];
+function paintChips(m) {
+  const box = ax('axChips');
+  box.innerHTML = '';
+  const off = !!(m.kind === 'ligand' || m.focus);
+  const set = (label, list, key, dis) => {
+    const lb = document.createElement('span');
+    lb.className = 'axChipLb';
+    lb.textContent = label;
+    box.appendChild(lb);
+    const wrap = document.createElement('div');
+    wrap.className = 'axChipSet';
+    list.forEach(([v, tx]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'axChip';
+      b.textContent = tx;
+      b.disabled = dis;
+      b.setAttribute('aria-pressed', vstate[key] === v ? 'true' : 'false');
+      b.addEventListener('click', () => { vstate[key] = v; paintChips(MOLS[cur]); styleView(); });
+      wrap.appendChild(b);
+    });
+    box.appendChild(wrap);
+  };
+  set('affichage', REPS, 'rep', off);
+  set('couleur', COLS, 'color', off);
+  const sp = document.createElement('button');
+  sp.type = 'button';
+  sp.className = 'axChip';
+  sp.style.border = '1px solid var(--line)';
+  sp.textContent = 'rotation';
+  sp.setAttribute('aria-pressed', vstate.spin ? 'true' : 'false');
+  sp.addEventListener('click', () => {
+    vstate.spin = !vstate.spin;
+    sp.setAttribute('aria-pressed', vstate.spin ? 'true' : 'false');
+    try { vstate.spin ? viewer.spin('y', 0.6) : viewer.spin(false); } catch (e) { }
+  });
+  box.appendChild(sp);
+}
+
+function paintFiche(m) {
+  const stats = m.stats.map(s => '<div><div class="k">' + esc(s[0]) + '</div><div class="v">' + esc(s[1]) + '</div></div>').join('');
+  const roles = m.roles.map(r => '<li>' + esc(r) + '</li>').join('');
+  const rcsb = m.fmt === 'sdf'
+    ? 'https://www.rcsb.org/ligand/' + m.code
+    : 'https://www.rcsb.org/structure/' + m.code;
+  ax('axFiche').innerHTML = '<div class="fcIn">'
+    + '<div class="fcKick"><i style="background:' + m.accent + '"></i>' + esc(m.fam) + '</div>'
+    + '<h3 class="fcName">' + esc(m.name) + '</h3>'
+    + '<div class="fcSub">' + esc(m.sub) + '</div>'
+    + '<p class="fcTag">' + esc(m.tagline) + '</p>'
+    + '<div class="fcSecT">Ce qu’elle fait</div>'
+    + '<ul class="fcRoles">' + roles + '</ul>'
+    + '<div class="fcSecT">En chiffres</div>'
+    + '<div class="fcStats">' + stats + '</div>'
+    + '<div class="fcSecT">Structure affichée</div>'
+    + '<div class="fcStruct">' + esc(m.struct)
+    + (m.note ? '<div class="fcNote">' + esc(m.note) + '</div>' : '') + '</div>'
+    + '<a class="fcLink" href="' + rcsb + '" target="_blank" rel="noopener">'
+    + esc(m.code) + ' sur rcsb.org ↗</a></div>';
+  ax('axFiche').scrollTop = 0;
+}
+
+/* ------------------------------------------------------------ OUVRIR/FERMER
+   L'animation est mise en veille tant que l'atlas est ouvert : deux rendus 3D
+   qui tournent en même temps pour un seul écran visible, c'est du gâchis. */
+function openAtlas(i) {
+  const idx = (i === undefined || i < 0) ? (cur < 0 ? 0 : cur) : i;
+  opened = true;
+  atlasEl.classList.add('on');
+  atlasEl.setAttribute('aria-hidden', 'false');
+  window.dispatchEvent(new CustomEvent('atlas:open'));
+  // la fiche s'affiche tout de suite ; la structure suit quand le viewer est prêt
+  cur = idx;
+  paintList(); paintFiche(MOLS[idx]); paintChips(MOLS[idx]);
+  route();
+  bootViewer(() => show(idx));
+}
+function closeAtlas() {
+  if (!opened) return;
+  opened = false;
+  atlasEl.classList.remove('on');
+  atlasEl.setAttribute('aria-hidden', 'true');
+  window.dispatchEvent(new CustomEvent('atlas:close'));
+  route();
+  try { viewer && viewer.spin(false); } catch (e) { }
+}
+
+ax('dockOpen').addEventListener('click', () => openAtlas(cur < 0 ? 0 : cur));
+ax('atlasMini').addEventListener('click', () => openAtlas(cur < 0 ? 0 : cur));
+ax('axBack').addEventListener('click', closeAtlas);
+ax('axRetry').addEventListener('click', () => {
+  const m = MOLS[cur];
+  if (m) { delete cache[m.code + '.' + m.fmt]; show(cur); }
+});
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && opened) closeAtlas(); });
+window.addEventListener('resize', () => { if (opened && viewer) { try { viewer.resize(); } catch (e) { } } });
+
+/* ------------------------------------------------------------------- LA FORGE
+   Les vignettes du tiroir sont de vrais rendus, pas des pastilles : un viewer
+   hors champ charge chaque structure à son tour, en fait une image, et la range.
+   Le tout est mis de côté dans le stockage local — au deuxième passage les
+   vignettes sont là avant même que la page ait fini de s'afficher.
+
+   L'ordre est délibéré : les structures légères d'abord, le récepteur à la
+   ryanodine et ses cent mille atomes en dernier, quand il n'y a plus rien
+   d'autre à faire. Chaque miniature laisse la main entre deux, pour ne pas
+   hacher l'animation. */
+const THUMB_KEY = 'contraction.thumb.v2.';   // v1 = les vignettes de 96 px de la liste
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
+// les vignettes de la premiere version n'ont plus d'emploi : on rend la place
+try { Object.keys(localStorage).forEach(k => { if (k.indexOf('contraction.thumb.v1.') === 0) localStorage.removeItem(k); }); } catch (e) { }
+
+let forge = null;
+function bootForge() {
+  return new Promise(res => {
+    const tryBoot = (tries) => {
+      const host3 = ax('thumbForge');
+      if (window.$3Dmol && host3 && host3.clientWidth) {
+        try {
+          forge = $3Dmol.createViewer(host3, { backgroundColor: '#150c11', backgroundAlpha: 0 });
+          forge.setBackgroundColor(0x150c11, 0);
+        } catch (e) { forge = null; }
+        res(forge);
+      } else if (tries > 40) res(null);
+      else setTimeout(() => tryBoot(tries + 1), 150);
+    };
+    tryBoot(0);
+  });
+}
+
+/* À 38 px, une silhouette d'une seule couleur se lit mieux qu'un dégradé : on
+   reprend la couleur de la molécule, celle de sa pastille. */
+function thumbStyle(m) {
+  forge.setStyle({}, {});
+  if (m.kind === 'ligand') {
+    forge.setStyle({}, { stick: { radius: 0.28, colorscheme: 'default' }, sphere: { scale: 0.4, colorscheme: 'default' } });
+  } else if (m.focus) {
+    forge.setStyle({ resn: AA }, { cartoon: { color: '#7a6068', opacity: 0.45 } });
+    forge.setStyle(m.focus.sel, { sphere: { scale: 2.4, color: m.focus.color } });
+  } else {
+    forge.setStyle({ resn: AA }, { cartoon: { color: m.accent } });
+  }
+  forge.setStyle({ resn: ['HOH', 'WAT', 'DOD'] }, {});
+}
+
+function applyThumb(m, uri) {
+  thumbURI[m.id] = uri;
+  // si c'est la molecule affichee a l'instant, on la remplace tout de suite
+  if (SLIDES[dkIdx] && SLIDES[dkIdx].id === m.id && !ax('dkFig').querySelector('img')) showSlide(dkIdx);
+}
+
+async function buildThumbs() {
+  const order = MOLS.map((m, i) => i)
+    .sort((a, b) => (MOLS[a].fmt === 'cif' ? 1 : 0) - (MOLS[b].fmt === 'cif' ? 1 : 0));
+  for (const i of order) {
+    const m = MOLS[i];
+    const key = THUMB_KEY + m.id;
+    let uri = lsGet(key);
+    if (!uri) {
+      const entry = await fetchStruct(m);
+      if (!entry) continue;
+      if (!forge) { await bootForge(); if (!forge) return; }
+      try {
+        forge.removeAllSurfaces(); forge.removeAllModels(); forge.removeAllShapes();
+        forge.addModel(entry.data, entry.format);
+        thumbStyle(m);
+        forge.zoomTo();
+        forge.render();
+        uri = forge.pngURI();
+      } catch (e) { continue; }
+      if (uri) lsSet(key, uri);
+    }
+    if (uri) applyThumb(m, uri);
+    await new Promise(r => setTimeout(r, 70));
+  }
+  try { forge.removeAllModels(); } catch (e) { }
+  // on relâche les grosses structures : elles seront reprises au cache disque si
+  // l'atlas les redemande, et douze mégaoctets de texte n'ont rien à faire en mémoire
+  Object.keys(cache).forEach(k => { if (cache[k].data.length > 3e6) delete cache[k]; });
+}
+
+/* ------------------------------------------------------------------- LES ROUTES
+   /contraction              l'animation du glissement
+   /contraction?scene=bridge le cycle du pont d'union
+   /molecules                l'atlas des molécules, ouvert
+   /molecules?m=serca        une molécule en particulier
+
+   Toutes les routes tiennent en UN segment, et ce qui les précise passe par la
+   requête. Ce n'est pas une coquetterie : la page appelle ses fichiers en relatif
+   (pdb/1SU4.pdb, vendor/three.module.min.js), donc « /molecules/serca » ferait
+   chercher pdb/ dans /molecules/. Un segment, et tout continue de résoudre à la
+   racine.
+
+   Rien n'est jamais rechargé : on réécrit l'entrée d'historique courante. Dans une
+   iframe on ne touche pas à l'historique du tout — c'est la page hôte qui tient la
+   barre d'adresse, on lui passe la route et elle en fait ce qu'elle veut. */
+const SLUG = {
+  actineG: 'actine-g', actineF: 'filament-actine', tropomyosine: 'tropomyosine',
+  troponine: 'troponine', calcium: 'calcium', myosine: 'tete-de-myosine',
+  atp: 'atp', adp: 'adp', titine: 'titine', actinine: 'alpha-actinine',
+  dhpr: 'recepteur-dhp', ryr: 'ryanodine', serca: 'serca'
+};
+const parSlug = (s) => MOLS.findIndex(m => SLUG[m.id] === s);
+const encadre = () => { try { return window.top !== window.self; } catch (e) { return true; } };
+
+function route() {
+  const m = MOLS[cur];
+  const path = opened ? '/molecules' : '/contraction';
+  const q = [];
+  if (opened && m && SLUG[m.id]) q.push('m=' + SLUG[m.id]);
+  if (!opened && window.__ctrScene && window.__ctrScene.get() === 1) q.push('scene=bridge');
+  const url = path + (q.length ? '?' + q.join('&') : '');
+  if (encadre()) {
+    // la page hôte tient la barre d'adresse ; si elle ne sait pas quoi en faire, tant pis
+    try { if (window.top.__adnRoute) window.top.__adnRoute(url); } catch (e) { }
+    return;
+  }
+  try { history.replaceState(history.state, '', url); } catch (e) { }
+}
+window.addEventListener('scene:change', route);
+
+/* Au chargement : on relit la route et on remet la page dans l'état qu'elle décrit. */
+function restaure() {
+  let p = '', q = null;
+  try { p = location.pathname.replace(/\.html$/, ''); q = new URLSearchParams(location.search); }
+  catch (e) { return; }
+  const scene = q && q.get('scene');
+  if (scene === 'bridge' && window.__ctrScene) { try { window.__ctrScene.set(1); } catch (e) { } }
+  if (!/\/molecules$/.test(p)) { route(); return; }
+  const i = q ? parSlug(q.get('m') || '') : -1;
+  openAtlas(i >= 0 ? i : 0);
+}
+
+paintDock();
+restaure();
+// on laisse d'abord la page s'installer
+setTimeout(buildThumbs, 1400);
 </script>
 </body>
 </html>

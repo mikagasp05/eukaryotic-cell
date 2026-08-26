@@ -14,8 +14,54 @@
 
 # Les URL sans extension marchaient grace a ce meme post-traitement. On les garde,
 # par reecriture cette fois (status 200 : l'URL affichee ne change pas).
+#
+# ROUTES LISIBLES ------------------------------------------------------------
+# Chaque ecran du site a son adresse : recharger /molecules rouvre l'atlas des
+# molecules, pas le debut de l'animation. Toutes tiennent en UN segment — les
+# pages appellent leurs fichiers en relatif (pdb/1SU4.pdb, assets/engine.js), et
+# sous /molecules/serca le navigateur irait les chercher dans /molecules/. Ce qui
+# precise une route passe par la requete : /molecules?m=serca.
+#
+# La meme table est reprise dans vite.config.js, pour le serveur de developpement.
+# Les modifier ensemble ou pas du tout.
+
+[[redirects]]
+  from = "/cell-choice"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/animal-cell"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/plant-cell"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/muscle-cell"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/enzymes"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/mechanisms"
+  to = "/index.html"
+  status = 200
+
 [[redirects]]
   from = "/contraction"
+  to = "/contraction.html"
+  status = 200
+
+[[redirects]]
+  from = "/molecules"
   to = "/contraction.html"
   status = 200
 

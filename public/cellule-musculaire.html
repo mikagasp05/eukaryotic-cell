@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cellule musculaire 3D</title>
+<!-- Route lisible : quand cette page est affichée en iframe, c'est le document
+     hôte qui tient la barre d'adresse. On lui dit seulement où l'on est ; s'il
+     n'écoute pas, il ne se passe rien. -->
+<script>
+(function () {
+  try { if (window.top !== window.self && window.top.__adnRoute) window.top.__adnRoute('/muscle-cell'); }
+  catch (e) { }
+})();
+</script>
 <meta name="description" content="Modele 3D interactif de la fibre musculaire : fibre, sarcomere, ponts d'union.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
@@ -296,10 +305,6 @@ class CelluleMusculaire extends DC.Logic {
       myosine: { name: 'Filament épais de myosine', sub: 'bande A', dot: '#c0454f', rows: [{ k: 'Bande', v: 'A — sombre, longueur constante' }, { k: 'Têtes', v: "ponts d'union avec l'actine" }, { k: 'Zone nue', v: 'au centre (zone H), sans têtes' }, { k: 'Contraction', v: 'les filaments glissent, ils ne raccourcissent pas' }] },
       ligneM: { name: 'Ligne M', sub: 'centre du sarcomère', dot: '#d9d16a', rows: [{ k: 'Rôle', v: 'aligne les filaments épais' }, { k: 'Position', v: 'milieu de la zone H' }, { k: 'Symétrie', v: 'les têtes pointent vers les deux stries Z' }] },
       titine: { name: 'Titine', sub: 'ressort moléculaire', dot: '#8fd0b0', rows: [{ k: 'Rôle', v: 'élasticité passive du sarcomère' }, { k: 'Trajet', v: 'strie Z → ligne M' }, { k: 'Effet', v: "recentre les filaments après l'étirement" }, { k: 'Étirement', v: '± 30 % de la longueur de repos (squelettique)' }] },
-      citerne: { name: 'Citerne terminale', sub: 'réticulum sarcoplasmique', dot: '#7fd0e8', rows: [{ k: 'Contenu', v: 'Ca²⁺ concentré' }, { k: 'Triade', v: '2 citernes + 1 tubule T' }, { k: 'Libération', v: 'canaux voltage-dépendants du RS' }, { k: 'Relâchement', v: 'le Ca²⁺ y est repompé activement' }] },
-      tubuleT2: { name: 'Tubule transverse', sub: 'jonction des bandes A et I', dot: '#5a9ed6', rows: [{ k: 'Rôle', v: 'amène la dépolarisation au cœur du sarcomère' }, { k: 'Position', v: '2 par sarcomère' }, { k: 'Origine', v: 'invagination du sarcolemme' }, { k: 'Suite', v: 'libération du Ca²⁺ dans le sarcoplasme' }] },
-      rsSleeve: { name: 'Réticulum sarcoplasmique', sub: 'manchon longitudinal', dot: '#8a79c8', rows: [{ k: 'Forme', v: 'enveloppe chaque myofibrille' }, { k: 'Rôle', v: 'pompe et retient le Ca²⁺ au repos' }, { k: 'Lisse', v: 'moins développé, disposition irrégulière' }, { k: 'Cardiaque', v: 'moins développé — pas de triade' }] },
-      mito2: { name: 'Mitochondrie', sub: 'entre les myofibrilles', dot: '#e8a05e', rows: [{ k: 'Rôle', v: "fournit l'ATP du cycle des ponts d'union" }, { k: 'Sert aussi', v: 'la pompe à Ca²⁺ et la pompe Na⁺/K⁺' }, { k: 'Cardiaque', v: 'beaucoup plus nombreuses' }, { k: 'Effet', v: 'grande résistance à la fatigue' }] },
       actineG: { name: 'Actine G', sub: 'monomère globulaire', dot: '#e8b48c', rows: [{ k: 'Assemblage', v: 'double hélice de monomères' }, { k: 'Site', v: 'fixation de la tête de myosine' }, { k: 'Diamètre', v: '≈ 7 nm' }, { k: 'Au repos', v: 'site masqué par la tropomyosine' }] },
       tropomyosine: { name: 'Tropomyosine', sub: 'masque les sites', dot: '#6fbf9a', rows: [{ k: 'Au repos', v: 'bloque les sites de fixation' }, { k: 'Contraction', v: 'se déplace de côté et les découvre' }, { k: 'Commandée par', v: 'la troponine chargée en Ca²⁺' }, { k: 'Lisse', v: 'présente, mais rôle de stabilisation mécanique' }] },
       troponine: { name: 'Complexe de troponine', sub: 'capteur de calcium', dot: '#d8b04a', rows: [{ k: 'Fixe', v: 'le Ca²⁺ libéré par le RS' }, { k: 'Effet', v: 'déplace la tropomyosine' }, { k: 'Résultat', v: "sites de l'actine accessibles" }, { k: 'Lisse', v: 'absente — remplacée par la calmoduline' }] },
@@ -332,9 +337,7 @@ class CelluleMusculaire extends DC.Logic {
       ],
       [
         { name: 'Limites du sarcomère', ids: ['strieZ', 'ligneM'] },
-        { name: 'Filaments', ids: ['actine', 'myosine', 'titine'] },
-        { name: 'Couplage excitation-contraction', ids: ['citerne', 'tubuleT2', 'rsSleeve'] },
-        { name: 'Énergie', ids: ['mito2'] }
+        { name: 'Filaments', ids: ['actine', 'myosine', 'titine'] }
       ],
       [
         { name: 'Filament fin', ids: ['actineG', 'tropomyosine', 'troponine'] },
@@ -971,61 +974,6 @@ class CelluleMusculaire extends DC.Logic {
       });
     });
     g.add(this.reg(1, 'titine', ti, { fixed: true, anchor: new T.Vector3(1.55, 0.8, 0.35) }));
-
-    /* manchon de réticulum sarcoplasmique */
-    const rs = new T.Group();
-    const rsM = this.clipMat(0x7566b4, { roughness: 0.5, transparent: true, opacity: 0.66, side: T.DoubleSide });
-    // Colliers pleins en u = 0.2 et 0.8 : c'est la que le manchon rejoint les citernes
-    // terminales des triades (x = ±1.32 sur une nappe qui court de -2.2 a 2.2).
-    rs.add(new T.Mesh(this.fenestra({
-      x0: -2.2, x1: 2.2, rad: 0.9, th: 0.055, nu: 88, nv: 34,
-      fx: 3.6, fa: 3.2, thr: 0.15, solid: [[0.2, 0.035], [0.8, 0.035]]
-    }), rsM));
-    g.add(this.reg(1, 'rsSleeve', rs, { fixed: true, anchor: new T.Vector3(-0.6, 1.15, 0.4) }));
-
-    /* triades : citernes terminales + tubule T */
-    const cis = new T.Group();
-    const cisM = this.clipMat(0x7fd0e8, { roughness: 0.4, transparent: true, opacity: 0.6, side: T.DoubleSide });
-    const caM = this.mat(0x9fe0ff, { roughness: 0.25, emissive: 0x1b4a63, clippingPlanes: [this.plane] });
-    [-1.32, 1.32].forEach(x => {
-      [-0.19, 0.19].forEach(dx => {
-        const t2 = new T.Mesh(new T.TorusGeometry(0.96, 0.11, 10, 48), cisM);
-        t2.rotation.y = Math.PI / 2; t2.position.x = x + dx; cis.add(t2);
-      });
-      for (let k = 0; k < 14; k++) {
-        const a = k / 14 * Math.PI * 2;
-        const s = new T.Mesh(new T.SphereGeometry(0.028, 8, 6), caM);
-        s.position.set(x + (k % 2 ? 0.19 : -0.19) + this.rr(-0.05, 0.05), Math.cos(a) * 0.96, Math.sin(a) * 0.96);
-        cis.add(s);
-      }
-    });
-    g.add(this.reg(1, 'citerne', cis, { fixed: true, anchor: new T.Vector3(1.32, 1.25, 0.4) }));
-
-    const tt = new T.Group();
-    const ttM = this.clipMat(0x5a9ed6, { roughness: 0.42, transparent: true, opacity: 0.85, side: T.DoubleSide });
-    [-1.32, 1.32].forEach(x => {
-      const r1 = new T.Mesh(new T.TorusGeometry(0.96, 0.062, 9, 48), ttM);
-      r1.rotation.y = Math.PI / 2; r1.position.x = x; tt.add(r1);
-    });
-    g.add(this.reg(1, 'tubuleT2', tt, { fixed: true, anchor: new T.Vector3(-1.32, 1.3, 0.35) }));
-
-    /* mitochondries longeant la myofibrille */
-    const mito = new T.Group();
-    [[-0.9, 1.3, 1.9], [0.95, 1.3, 4.6]].forEach(q => {
-      const m = new T.Group();
-      const outer = new T.Mesh(this.warp(new T.CapsuleGeometry(0.19, 0.85, 10, 22), 0.035, 5.5), this.clipMat(0xe8a05e, { transparent: true, opacity: 0.68, roughness: 0.68, side: T.DoubleSide }));
-      outer.rotation.z = Math.PI / 2;
-      m.add(outer);
-      const cr = this.clipMat(0xffd0a0, { roughness: 0.42 });
-      for (let i = 0; i < 8; i++) {
-        const t2 = new T.Mesh(new T.TorusGeometry(0.13, 0.018, 6, 20), cr);
-        t2.rotation.y = Math.PI / 2; t2.position.x = -0.42 + i * 0.12; t2.rotation.z = this.rr(-0.4, 0.4);
-        m.add(t2);
-      }
-      m.position.set(q[0], Math.cos(q[2]) * q[1], Math.sin(q[2]) * q[1]);
-      mito.add(m);
-    });
-    g.add(this.reg(1, 'mito2', mito, { fixed: true, kids: true, anchor: new T.Vector3(-0.9, 1.5, 0.4) }));
 
     g.traverse(o => {
       if (!o.isMesh) return;

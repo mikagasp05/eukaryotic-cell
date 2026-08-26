@@ -11,6 +11,28 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <!-- Atlas des protéines : rendu temps réel des structures PDB (RCSB) -->
 <script async src="https://cdn.jsdelivr.net/npm/3dmol@2/build/3Dmol-min.js"></script>
+<script>
+/* ROUTES LISIBLES — amorçage. Classique et inline à dessein : il doit s'exécuter
+   avant l'écran de chargement et avant le module de l'écran de choix, qui lisent
+   tous deux history.state pour savoir dans quelle cellule on était. Traduire le
+   chemin en état d'historique suffit : ils rouvrent la bonne cellule tout seuls.
+   La table complète des routes vit en bas de page, et dans netlify.toml. */
+(function () {
+  var ESPECE = {
+    '/animal-cell': 'animale', '/plant-cell': 'vegetale', '/muscle-cell': 'musculaire',
+    // l'atlas et les mécanismes s'ouvrent par-dessus la plongée : on rétablit celle-ci dessous
+    '/enzymes': 'animale', '/mechanisms': 'animale'
+  };
+  var p;
+  try { p = location.pathname.replace(/\.html$/, '').replace(/\/+$/, ''); } catch (e) { return; }
+  var sp = ESPECE[p];
+  if (!sp) return;
+  // Une entrée d'historique qui porte déjà une espèce fait foi : elle vient d'un
+  // rechargement, elle est plus précise que l'adresse.
+  if (history.state && history.state.species) return;
+  try { history.replaceState({ adnNav: 1, species: sp }, ''); } catch (e) { }
+})();
+</script>
 <style>
   /* ============================================================================
      TOKENS DU DESIGN SYSTEM « adn3d »
@@ -2856,6 +2878,8 @@ let curPage = null;
 function showPage(name){
   if(curPage===name) return;
   const prev=curPage; curPage=name;
+  // le bloc ROUTES, en bas de page, tient la barre d'adresse à jour
+  try{ window.dispatchEvent(new CustomEvent('adn:page',{ detail:name })); }catch(e){}
   if(prev && PAGE_EL[prev]){
     const el=PAGE_EL[prev]; el.classList.remove('show');
     setTimeout(()=>{ if(curPage!==prev) el.hidden=true; }, 320);
@@ -2957,6 +2981,7 @@ function renderAtFoot(){
 }
 function selectProt(i, quiet){
   atCur=i;
+  try{ window.dispatchEvent(new CustomEvent('adn:prot',{ detail:i })); }catch(e){}
   renderAtFoot(); renderAtChips();
   if(!quiet) syncAtRows();
   bootBay(bayAtlas, ()=>bayShow(bayAtlas,i));
@@ -2984,6 +3009,7 @@ $at('atQuery').addEventListener('input', e=>{ atQuery=e.target.value; renderAtLi
 let fiCur=0;
 function openFiche(i){
   fiCur=i; renderFiche();
+  try{ window.dispatchEvent(new CustomEvent('adn:prot',{ detail:i })); }catch(e){}
   showPage('fiche');
   bootBay(bayFiche, ()=>bayShow(bayFiche,i));
 }
@@ -3241,6 +3267,19 @@ window.__atlasPreload = { state: preloadState, promise: atlasPreload };   // hoo
 
    La flèche « suivant » n'est pas gérée : re-rentrer dans une cellule voudrait dire
    rejouer le vol d'approche sans que personne l'ait choisie.                        */
+
+/* Ce dont le bloc ROUTES a besoin pour lire et rouvrir les pages de ce module.
+   Le nom d'une enzyme fait un identifiant plus lisible que son code PDB :
+   /enzymes?p=arn-polymerase plutôt que ?p=1i6h. */
+const protSlug = (p) => p ? p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : '';
+window.__adnAtlas = {
+  open: openAtlas, mech: openMecanismes, select: selectProt,
+  page: () => curPage,
+  slug: () => protSlug(PROTEINS[curPage === 'fiche' ? fiCur : atCur]),
+  find: (s) => PROTEINS.findIndex(p => protSlug(p) === String(s || '').toLowerCase())
+};
+
 (function () {
   // L'espèce voyage avec le niveau : c'est elle qui permet de rouvrir la bonne cellule
   // après un rechargement, et de ne pas la perdre en refermant une page par-dessus.
@@ -3317,6 +3356,84 @@ window.__atlasPreload = { state: preloadState, promise: atlasPreload };   // hoo
       if (e.key === 'Escape' && document.body.classList.contains('scale-open')) close();
     });
   })();
+</script>
+
+<script type="module">
+/* ============================================================== ROUTES LISIBLES
+   /cell-choice   l'écran de choix de la cellule
+   /animal-cell   la plongée, cellule animale
+   /plant-cell    la cellule végétale
+   /muscle-cell   la fibre musculaire
+   /enzymes       l'atlas des enzymes de l'ADN     (?p=arn-polymerase → sa fiche)
+   /mechanisms    les mécanismes et leurs frises
+   et, dans leur propre document : /contraction et /molecules.
+
+   Ce document tient la barre d'adresse, y compris pour les pages affichées en
+   iframe : elles posent leur route par window.top.__adnRoute plutôt que de
+   toucher à un historique qui n'est pas le leur.
+
+   Rien n'est jamais rechargé. On réécrit l'entrée courante SANS toucher à son
+   état : la pile d'historique appartient au bloc HISTORIQUE, plus haut, qui s'en
+   sert pour le bouton Retour. Deux écritures de la même entrée, deux usages qui
+   ne se marchent pas dessus.
+
+   Module, et le dernier : les modules s'exécutent dans l'ordre du document, une
+   fois celui-ci analysé — donc après celui de l'atlas, dont on a besoin ici. */
+const PATH = { animale: '/animal-cell', vegetale: '/plant-cell', musculaire: '/muscle-cell' };
+
+function ecrire(url) {
+  try {
+    if (location.pathname + location.search === url) return;
+    history.replaceState(history.state, '', url);
+  } catch (e) { }
+}
+/* Ce que les pages en iframe appellent pour poser leur propre route. */
+window.__adnRoute = (url) => ecrire(url);
+
+function courant() {
+  const A = window.__adnAtlas;
+  if (A) {
+    const p = A.page();
+    if (p === 'atlas' || p === 'fiche') { const s = A.slug(); return '/enzymes' + (s ? '?p=' + s : ''); }
+    if (p === 'mecanismes' || p === 'frise') return '/mechanisms';
+  }
+  const sp = (history.state && history.state.species) || null;
+  return (sp && PATH[sp]) || '/cell-choice';
+}
+const maj = () => ecrire(courant());
+
+window.addEventListener('adn:page', maj);
+window.addEventListener('adn:prot', maj);
+// le choix d'une cellule et le retour à l'écran de choix passent tous deux par la
+// pile d'historique : on se raccroche à elle plutôt qu'aux boutons
+window.addEventListener('popstate', () => setTimeout(maj, 0));
+const choisi = window.onCellIntroChoice;
+window.onCellIntroChoice = function (sp) {
+  if (typeof choisi === 'function') choisi(sp);
+  setTimeout(maj, 0);          // après que la pile ait été empilée par le bloc HISTORIQUE
+};
+
+/* Au chargement, l'espèce a déjà été remise en place par l'amorçage du <head>.
+   Il ne reste qu'à rouvrir la page posée par-dessus, s'il y en avait une. */
+(function restaure() {
+  let p = '', q = null;
+  try {
+    p = location.pathname.replace(/\.html$/, '').replace(/\/+$/, '');
+    q = new URLSearchParams(location.search);
+  } catch (e) { return; }
+  const A = window.__adnAtlas;
+  if (!A) return;
+  if (p === '/enzymes') {
+    A.open();
+    const i = A.find(q.get('p') || '');
+    if (i >= 0) A.select(i);
+    return;
+  }
+  if (p === '/mechanisms') { A.mech(); return; }
+  // la racine reste la racine : on ne réécrit une adresse que si elle en était déjà une
+  if (p === '' || p === '/index') return;
+  maj();
+})();
 </script>
 
 </body>
