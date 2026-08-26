@@ -1,0 +1,30 @@
+# Netlify ne se contente pas de servir les fichiers : pour fabriquer les jolies URL
+# (/contraction plutot que /contraction.html) il RE-SERIALISE le HTML — il le
+# reparse, repasse les attributs en guillemets simples et « echappe » les
+# apostrophes internes en \' , une sequence qui n'echappe rien en HTML.
+#
+# Un gestionnaire inline de cellule-musculaire.html en est ressorti coupe en deux,
+# suivi de noms d'attributs invalides. Chromium recollait les morceaux ; WebKit
+# abandonnait le gabarit a cet endroit, et la page perdait tout ce qui venait
+# apres : carte de l'atlas, compteur de champ, et la fibre elle-meme.
+#
+# Les pages sont ecrites a la main : on les sert telles quelles.
+[build.processing]
+  skip_processing = true
+
+# Les URL sans extension marchaient grace a ce meme post-traitement. On les garde,
+# par reecriture cette fois (status 200 : l'URL affichee ne change pas).
+[[redirects]]
+  from = "/contraction"
+  to = "/contraction.html"
+  status = 200
+
+[[redirects]]
+  from = "/cellule-musculaire"
+  to = "/cellule-musculaire.html"
+  status = 200
+
+[[redirects]]
+  from = "/cellule-vegetale"
+  to = "/cellule-vegetale.html"
+  status = 200

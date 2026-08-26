@@ -16,6 +16,18 @@ a:hover{color:#ffc9a8}
 @keyframes cardIn{from{opacity:0}to{opacity:1}}
 @keyframes odRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
+/* --- Carte « Atlas de la contraction ». Le survol est ici, et pas en onmouseover :
+   un gestionnaire inline contient des apostrophes JS, que le post-traitement HTML
+   de Netlify reguillemette en `\'` — qui n'echappe rien en HTML. L'attribut se
+   terminait au premier `'`, la suite devenait des noms d'attributs invalides, et
+   WebKit abandonnait le gabarit a cet endroit : plus de carte, plus de compteur de
+   champ, plus de fibre. Aucun JS dans un attribut, donc plus rien a triturer.     */
+.atlas-card { position:absolute; right:22px; bottom:56px; z-index:4; width:236px; padding:11px 13px;
+  border-radius:8px; border:1px solid rgba(220,170,140,.16); background:rgba(34,18,24,.5);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); display:flex; align-items:center; gap:10px;
+  text-decoration:none; cursor:pointer; transition:background .18s, border-color .18s, transform .18s; }
+.atlas-card:hover { background:rgba(52,28,34,.72); border-color:rgba(240,162,115,.42); transform:translateY(-2px); }
+
 /* --- Glissieres : meme design que la cellule animale (index.html), decline dans
    l'orange de la fibre. Meme piste arrondie, meme pouce carre a trois barres.    */
 .dslider { position:relative; height:30px; margin-top:8px; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; }
@@ -218,7 +230,7 @@ a:hover{color:#ffc9a8}
 
   <!-- Cette carte etait inerte : elle annoncait un atlas sans y mener. Elle ouvre
        desormais l'animation de la contraction (contraction.html). -->
-  <a href="./contraction.html" style="position:absolute;right:22px;bottom:56px;z-index:4;width:236px;padding:11px 13px;border-radius:8px;border:1px solid rgba(220,170,140,.16);background:rgba(34,18,24,.5);backdrop-filter:blur(8px);display:flex;align-items:center;gap:10px;text-decoration:none;cursor:pointer;transition:background .18s,border-color .18s,transform .18s" onmouseover="this.style.background='rgba(52,28,34,.72)';this.style.borderColor='rgba(240,162,115,.42)';this.style.transform='translateY(-2px)'" onmouseout="this.style.background='rgba(34,18,24,.5)';this.style.borderColor='rgba(220,170,140,.16)';this.style.transform='none'">
+  <a class="atlas-card" href="./contraction.html">
     <div style="flex:1">
       <div style="font-size:12.5px;font-weight:600;color:#f8ece7">Atlas de la contraction</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:rgba(244,231,227,.4);line-height:1.5;margin-top:3px">du potentiel d'action au glissement</div>
