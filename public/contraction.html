@@ -81,6 +81,11 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
   background:var(--accent-soft);color:var(--fg);cursor:pointer;font-size:13px;line-height:1;
   display:grid;place-items:center;transition:background .18s}
 #play:hover{background:rgba(240,162,115,.28)}
+#loopBtn{flex:none;width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:15px;line-height:1;
+  display:grid;place-items:center;transition:background .18s,border-color .18s,color .18s;
+  border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.05);color:var(--fg-3)}
+#loopBtn:hover{background:rgba(255,255,255,.1);color:var(--fg-2)}
+#loopBtn.on{border-color:rgba(240,162,115,.45);background:var(--accent-soft);color:var(--fg)}
 #lab{flex:1;font:400 11px/1.4 var(--mono);color:var(--fg-2)}
 #reset{flex:none;background:none;border:0;padding:0;cursor:pointer;color:var(--fg-3);
   font:400 10px/1.4 var(--mono);text-decoration:underline;text-underline-offset:3px}
@@ -99,7 +104,7 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 /* En bas a gauche, et non en haut au centre : la page est affichee en iframe dans
    index.html, dont le bouton « Changer de cellule » occupe deja ce coin-la, sur un
    plan superieur. Un lien pose au meme endroit aurait disparu dessous. */
-#back{position:fixed;left:24px;bottom:126px;z-index:6;
+#back{position:fixed;left:24px;bottom:152px;z-index:6;
   padding:8px 14px;border-radius:9px;text-decoration:none;white-space:nowrap;
   background:var(--glass);border:1px solid var(--line);color:var(--fg-2);
   font:400 11px/1 var(--mono);transition:color .18s,border-color .18s,transform .18s}
@@ -109,6 +114,7 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 /* ---- légende ------------------------------------------------------------- */
 #key{position:fixed;left:24px;bottom:22px;z-index:5;display:flex;flex-direction:column;gap:5px}
 #key div{display:flex;align-items:center;gap:8px;font:400 10px/1.4 var(--mono);color:var(--fg-2)}
+#key #keyMol{gap:3px;flex-wrap:wrap}
 #key i{width:9px;height:9px;border-radius:2px;flex:none}
 
 @media (max-width:1100px){
@@ -153,9 +159,9 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 </div>
 
 <div id="meas">
-  <div class="row"><span class="tag">Bande A · myosine</span><b id="mA">—</b></div>
-  <div class="row"><span class="tag">Bande I · actine seule</span><b id="mI">—</b></div>
-  <div class="row"><span class="tag">Sarcomère · Z à Z</span><b id="mZ">—</b></div>
+  <div class="row"><span class="tag" id="t1">Bande A · myosine</span><b id="mA">—</b></div>
+  <div class="row"><span class="tag" id="t2">Bande I · actine seule</span><b id="mI">—</b></div>
+  <div class="row"><span class="tag" id="t3">Sarcomère · Z à Z</span><b id="mZ">—</b></div>
 </div>
 
 <div id="schema">
@@ -166,6 +172,7 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 <div id="bar">
   <div class="top">
     <button id="play" type="button" aria-label="Lecture ou pause">❚❚</button>
+    <button id="loopBtn" type="button" aria-pressed="false" title="Rejouer en boucle" aria-label="Rejouer en boucle">∞</button>
     <div id="lab">—</div>
     <button id="reset" type="button">revenir au repos</button>
   </div>
@@ -182,6 +189,12 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
   <div><i style="background:#f0d3c0"></i>Strie Z</div>
   <div><i style="background:#d9d16a"></i>Ligne M</div>
   <div><i style="background:#8fd0b0"></i>Titine</div>
+  <div id="keyMol" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--line)">
+    <i style="background:#f0d264;border-radius:50%"></i>ATP
+    <i style="background:#d9a94e;border-radius:50%;margin-left:6px"></i>ADP
+    <i style="background:#f0901f;border-radius:50%;margin-left:6px"></i>Pi
+    <i style="background:#7fe0a0;border-radius:50%;margin-left:6px"></i>Ca²⁺
+  </div>
 </div>
 
 <script type="module">
@@ -429,10 +442,21 @@ const SARCO = (() => {
 
 /* ============================================================================
    4. SCÈNE B — LE PONT D'UNION, EN CINQ TEMPS
-   Gros plan sur une seule tête de myosine et un seul filament mince. Le cycle
-   du cours : ATP → hydrolyse et redressement → fixation → bascule qui tire
-   l'actine → nouvel ATP qui détache. Le filament mince garde le terrain gagné
-   d'un cycle à l'autre : c'est ce cumul qui fait le glissement de la scène A.
+   Gros plan sur UNE molécule de myosine et un filament mince.
+
+   Deux têtes, et non une : la myosine II est un dimère, chaque chaîne lourde se
+   terminant par une tête globulaire. En revanche, elles n'avancent pas « comme
+   des pieds » : dans le muscle, les deux têtes travaillent de façon INDÉPENDANTE
+   et la molécule est non-processive — elle lâche l'actine à chaque cycle, et
+   c'est l'action collective de milliers de têtes qui entretient le mouvement.
+   La marche alternée pied par pied est le geste de la myosine V, processive,
+   qui fait des pas de 36 nm. La myosine II, elle, fait des pas de ~5 nm.
+   On alterne donc les deux têtes d'un cycle à l'autre : c'est une aide à la
+   lecture, dite comme telle dans le panneau, pas une prétention au réalisme.
+
+   Le pas, lui, est juste : la course du levier vaut 5,2 à 5,5 nm et les monomères
+   d'actine sont espacés de 5,5 nm. Un coup de rame avance donc le filament
+   d'exactement une perle.
    ========================================================================== */
 const PONT = (() => {
   const g = new THREE.Group();
@@ -453,147 +477,259 @@ const PONT = (() => {
   const thin = new THREE.Group();
   const beadGeo = new THREE.SphereGeometry(0.15, 14, 11);
   const beadMat = mat(COL.actine, { roughness: 0.48 });
-  const N = 21, STEP = 0.26;
+  const N = 64, STEP = 0.26;               // STEP = un monomère d'actine (5,5 nm)
+  const TWIST = Math.PI * 2 / 10;          // un tour tous les 10 monomères, tout rond
+  const PERIODE = 10 * STEP;               // longueur au bout de laquelle le motif se répète
+  const X0 = -7.0;                         // débordement asymétrique : la marge est à droite,
+                                           // c'est de ce côté que le bouclage la consomme
+  const markMat = mat(0xffd9a0, { roughness: 0.35, emissive: 0x6b4a1a, emissiveIntensity: 0.5 });
   for (let k = 0; k < N; k++) {
-    const t = k * 0.62;
+    const t = k * TWIST;
     [1, -1].forEach(s => {
-      const b = new THREE.Mesh(beadGeo, beadMat);
-      b.position.set(-2.6 + k * STEP, Math.cos(t) * 0.1 * s, Math.sin(t) * 0.1 * s + 0.02 * s);
+      // une perle sur dix est éclaircie : c'est le point de mire qui rend le
+      // déplacement d'un seul monomère perceptible à l'œil. Une sur dix, donc
+      // une par période : le repère survit au bouclage.
+      const b = new THREE.Mesh(beadGeo, (k % 10 === 4 && s === 1) ? markMat : beadMat);
+      b.position.set(X0 + k * STEP, Math.cos(t) * 0.1 * s, Math.sin(t) * 0.1 * s + 0.02 * s);
       thin.add(b);
     });
   }
-  /* tropomyosine : le ruban qui masque les sites, et qui s'écarte au calcium */
   const tropoMat = mat(COL.tropo, { roughness: 0.6 });
   const tropo = [1, -1].map(s => {
     const pts = [];
-    for (let k = 0; k <= 60; k++) {
-      const u = k / 60, x = -2.6 + u * (N - 1) * STEP, t = u * (N - 1) * 0.62;
+    for (let k = 0; k <= 130; k++) {
+      const u = k / 130, x = X0 + u * (N - 1) * STEP, t = u * (N - 1) * TWIST;
       pts.push([x, Math.cos(t) * 0.17 * s, Math.sin(t) * 0.17 * s]);
     }
-    const m = new THREE.Mesh(tubeG(pts, 0.045, 200, 6), tropoMat);
+    const m = new THREE.Mesh(tubeG(pts, 0.045, 460, 6), tropoMat);
     thin.add(m);
     return m;
   });
-  /* troponine : les blocs violets, un par tour, qui portent le site à calcium */
   const tropoNine = [];
-  for (let k = 2; k < N - 2; k += 5) {
-    const t = k * 0.62;
+  for (let k = 2; k < N - 2; k += 5) {          // 5 divise 10 : le motif reste périodique
+    const t = k * TWIST;
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), mat(COL.troponine, { roughness: 0.4 }));
-    m.position.set(-2.6 + k * STEP, Math.cos(t) * 0.2, Math.sin(t) * 0.2 + 0.06);
+    m.position.set(X0 + k * STEP, Math.cos(t) * 0.2, Math.sin(t) * 0.2 + 0.06);
     thin.add(m); tropoNine.push(m);
   }
-  /* sites de liaison : ils s'allument quand la tropomyosine s'écarte */
   const siteMat = new THREE.MeshStandardMaterial({
     color: 0x8ff0c4, roughness: 0.3, emissive: 0x2f7f5e, emissiveIntensity: 0, transparent: true, opacity: 0
   });
   const sites = [];
-  for (let k = 3; k < N - 3; k += 3) {
+  for (let k = 5; k < N - 3; k += 5) {          // idem : un site tous les 5 monomères
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), siteMat);
-    m.position.set(-2.6 + k * STEP, 0.16, 0.1);
+    m.position.set(X0 + k * STEP, 0.16, 0.1);
     thin.add(m); sites.push(m);
   }
   thin.position.y = 0.62;
   g.add(thin);
 
-  /* --- la tête de myosine : un bras, un col, une tête --------------------- */
-  const arm = new THREE.Group();               // pivote au pied, sur le filament épais
-  arm.position.set(0, -0.72, 0.16);
-  const ARM = 0.92;                            // portée du bras : la tête doit toucher l'actine
-  const armMesh = new THREE.Mesh(xCyl(0.055, 0.07, ARM, 12), mat(0xd4525f, { roughness: 0.45 }));
-  armMesh.rotation.z = Math.PI / 2;            // debout : le cylindre couché sur X se redresse
-  armMesh.position.y = ARM / 2;
-  arm.add(armMesh);
-  const wrist = new THREE.Group();             // le col, qui bascule
-  wrist.position.y = ARM;
-  const headGeo = new THREE.SphereGeometry(0.15, 16, 12); headGeo.scale(1.5, 0.85, 0.85);
-  const headMesh = new THREE.Mesh(headGeo, mat(COL.tete, { roughness: 0.4 }));
-  headMesh.position.set(0.14, 0.16, 0);
-  wrist.add(headMesh);
-  const neck = new THREE.Mesh(xCyl(0.045, 0.05, 0.3, 10), mat(0xd4525f, { roughness: 0.45 }));
-  neck.rotation.z = Math.PI / 3;
-  neck.position.set(0.05, 0.07, 0);
-  wrist.add(neck);
-  arm.add(wrist);
-  g.add(arm);
+  /* --- LA MOLÉCULE DE MYOSINE : une queue, deux cols, deux têtes ---------- */
+  const myoMat = mat(0xd4525f, { roughness: 0.45 });
+  const headMat = mat(COL.tete, { roughness: 0.4 });
+  const lightMat = mat(0xf0b49a, { roughness: 0.5 });   // chaînes légères du col
 
-  /* --- jetons ATP / ADP + Pi / Ca2+ --------------------------------------- */
-  const atpTag = labelSprite('ATP', '#ffe9a8'); atpTag.visible = false; g.add(atpTag);
-  const adpTag = labelSprite('ADP + Pi', '#ffe9a8'); adpTag.visible = false; g.add(adpTag);
-  const caTag = labelSprite('Ca2+', '#a8f5cf'); caTag.visible = false; g.add(caTag);
-  const caGeo = new THREE.SphereGeometry(0.07, 10, 8);
+  const dimer = new THREE.Group();
+  dimer.position.set(0, -0.72, 0.16);
+  /* la queue en super-hélice, commune aux deux chaînes lourdes */
+  const tail = new THREE.Mesh(xCyl(0.07, 0.085, 0.45, 12), myoMat);
+  tail.rotation.z = Math.PI / 2;
+  tail.position.y = 0.22;
+  dimer.add(tail);
+  /* rotule de jonction : sans elle, les deux bras semblaient décollés de la queue */
+  const hinge = new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 11), myoMat);
+  hinge.position.y = 0.45;
+  dimer.add(hinge);
+
+  const HEADS = [1, -1].map((sgn, idx) => {
+    const arm = new THREE.Group();          // pivote au sommet de la queue
+    arm.position.set(0, 0.45, sgn * 0.055);
+    const ARM = 0.72;                       // le levier : c'est lui qui bascule
+    const armMesh = new THREE.Mesh(xCyl(0.05, 0.062, ARM, 12), myoMat);
+    armMesh.rotation.z = Math.PI / 2;
+    armMesh.position.y = ARM / 2;
+    arm.add(armMesh);
+    /* chaînes légères : les deux manchons du col, essentiels au levier */
+    [0.34, 0.55].forEach(h => {
+      const lc = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), lightMat);
+      lc.scale.set(1, 1.5, 1);
+      lc.position.set(0.02, h, 0);
+      arm.add(lc);
+    });
+    const wrist = new THREE.Group();
+    wrist.position.y = ARM;
+    /* rotule du poignet : elle ferme le raccord bras / col */
+    const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.062, 12, 10), myoMat);
+    wrist.add(knuckle);
+    const HX = 0.15, HY = 0.15;                       // position de la tête
+    const hGeo = new THREE.SphereGeometry(0.15, 18, 14); hGeo.scale(1.45, 0.9, 0.9);
+    const head = new THREE.Mesh(hGeo, headMat);
+    head.position.set(HX, HY, 0);
+    wrist.add(head);
+    /* col construit pour relier exactement (0,0,0) au centre de la tête : c'est ce
+       raccord calculé, et non plus posé à vue, qui supprime le trou entre les deux. */
+    const nLen = Math.hypot(HX, HY);
+    const neck = new THREE.Mesh(xCyl(0.05, 0.062, nLen + 0.1, 12), myoMat);
+    neck.position.set(HX / 2, HY / 2, 0);
+    neck.rotation.z = Math.atan2(HY, HX);
+    wrist.add(neck);
+    /* la poche à nucléotide : là où se logent l'ATP puis l'ADP + Pi */
+    const pocket = new THREE.Group();
+    pocket.position.set(0.02, 0.22, 0.14);
+    wrist.add(pocket);
+    arm.add(wrist);
+    dimer.add(arm);
+    return { arm, wrist, head, pocket, sgn, idx };
+  });
+  g.add(dimer);
+
+  /* --- MOLÉCULES : des sphères, pas des modèles atomiques -----------------
+     Un ball-and-stick complet (l'ATP en compte une trentaine d'atomes) tourne à
+     cette échelle en petite bouillie illisible. Une sphère par molécule se lit
+     d'un coup d'œil, et c'est d'ailleurs ce que fait la planche du cours, qui
+     dessine l'ATP en pastille jaune. La taille décroît avec la molécule :
+     ATP > ADP > Pi, et le calcium est un simple ion.                          */
+  const MOL = {
+    atp: { c: 0xf0d264, r: 0.125, e: 0x6b5312 },
+    adp: { c: 0xd9a94e, r: 0.105, e: 0x5c4210 },
+    pi:  { c: 0xf0901f, r: 0.068, e: 0x6b3c08 }
+  };
+  function blob(def) {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(def.r, 20, 15),
+      mat(def.c, { roughness: 0.28, metalness: 0.06, emissive: def.e, emissiveIntensity: 0.55 })
+    );
+    m.visible = false;
+    g.add(m);
+    return m;
+  }
+  const mATP = blob(MOL.atp);
+  const mADP = blob(MOL.adp);
+  const mPi = blob(MOL.pi);
+  const tagATP = labelSprite('ATP', '#ffe0a0'); tagATP.visible = false; g.add(tagATP);
+  const tagADP = labelSprite('ADP', '#ffd18a'); tagADP.visible = false; g.add(tagADP);
+  const tagPi = labelSprite('Pi', '#ffc48a'); tagPi.visible = false; g.add(tagPi);
+  const tagCa = labelSprite('Ca2+', '#a8f5cf'); tagCa.visible = false; g.add(tagCa);
+
+  /* --- calcium : des ions, pas des billes anonymes ------------------------ */
+  const caGeo = new THREE.SphereGeometry(0.085, 12, 9);
   const caMat = mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5, transparent: true, opacity: 0 });
   const cas = [];
   let cseed = 7;
   const crnd = () => ((cseed = (cseed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  for (let k = 0; k < 26; k++) {
+  for (let k = 0; k < 22; k++) {
     const m = new THREE.Mesh(caGeo, caMat);
-    m.userData.home = new THREE.Vector3(-2.8 + crnd() * 5.6, 1.6 + crnd() * 1.4, -1 + crnd() * 2);
+    m.userData.home = new THREE.Vector3(-3.4 + crnd() * 6.8, 1.6 + crnd() * 1.4, -1 + crnd() * 2);
     m.position.copy(m.userData.home);
     g.add(m); cas.push(m);
   }
 
-  /* --- le cycle -----------------------------------------------------------
-     6 phases : le déclencheur calcique, puis les cinq temps du cours.
-     `slide` cumule le terrain gagné par le filament mince.                   */
+  /* --- le cycle ----------------------------------------------------------
+     6 phases : le déclencheur calcique, puis les cinq temps du cours. La tête
+     active alterne d'un cycle à l'autre ; l'autre reste détachée, en attente.  */
   let slide = 0;
-  const SLIDE_STEP = 0.42;
-  const BASE_X = 0.0;
+  const SLIDE_STEP = STEP;                  // un coup de rame = un monomère d'actine
+  let activeIdx = 0;                        // déduit du cycle en cours, pas accumulé
+  const _v = new THREE.Vector3();
 
-  function update(step, u) {
-    // step : 0 = déclencheur, 1..5 = les cinq temps ; u : avancement dans l'étape
+  function poseMolecule(obj, tag, target, show, tagOff) {
+    obj.visible = show; if (tag) tag.visible = show;
+    if (!show) return;
+    obj.position.copy(target);
+    if (tag) tag.position.copy(target).add(new THREE.Vector3(0, tagOff || 0.28, 0.25));
+  }
+
+  function update(step, u, cyc) {
+    activeIdx = (cyc || 0) % 2;             // les têtes se relaient d'un cycle à l'autre
+    slide = (cyc || 0) * SLIDE_STEP;        // le terrain déjà gagné par les cycles passés
     const e = smooth(u);
-    const gate = step >= 1 ? 1 : e;              // ouverture des sites
-    // tropomyosine : elle roule et découvre les sites
+    // la porte s'ouvre au déclencheur, reste ouverte pendant les cinq temps,
+    // et se referme au relâchement
+    const gate = step === 0 ? e : (step === 6 ? 1 - e : 1);
     tropo.forEach((m, i) => { m.rotation.x = gate * 0.9 * (i ? -1 : 1); });
     tropoNine.forEach(m => { m.scale.setScalar(1 + gate * 0.12); });
     siteMat.opacity = gate * 0.95;
     siteMat.emissiveIntensity = gate * 0.8;
-    // calcium : il arrive pendant le déclencheur, puis reste fixé
-    const caIn = step === 0 ? e : 1;
+
+    const caIn = step === 0 ? e : (step === 6 ? 1 - e : 1);
     caMat.opacity = caIn * 0.95;
     cas.forEach((m, i) => {
       const target = tropoNine[i % tropoNine.length];
       m.position.lerpVectors(m.userData.home, target.position.clone().add(thin.position), caIn);
     });
-    caTag.visible = step === 0;
-    if (step === 0) caTag.position.set(-2.4, 2.1, 0);
+    tagCa.visible = step === 0 || step === 6;
+    if (tagCa.visible) tagCa.position.set(-1.9, 2.0, 0);
 
-    /* bascule du col : 0 = configuration de basse énergie (tête pliée),
-       1 = configuration de haute énergie (tête redressée). */
+    /* état des deux têtes : l'active joue le cycle, l'autre attend, repliée */
     let cocked = 0, attach = 0, stroking = 0;
-    if (step === 0) { cocked = 0; }
-    else if (step === 1) { cocked = 0; }
-    else if (step === 2) { cocked = e; }
+    if (step === 2) cocked = e;
     else if (step === 3) { cocked = 1; attach = e; }
     else if (step === 4) { cocked = 1 - e; attach = 1; stroking = e; }
-    else if (step === 5) { cocked = 0; attach = 1 - e; }
+    else if (step === 5) { attach = 1 - e; }
+    // step 6 : tout est détaché, replié, en attente d'un nouveau signal
 
-    wrist.rotation.z = lerp(-0.62, 0.42, cocked);
-    arm.rotation.z = lerp(-0.05, 0.1, cocked) - attach * 0.06;
-    // la tête se rapproche du filament mince quand elle se lie
-    arm.position.y = -0.72 + attach * 0.1;
+    HEADS.forEach((H, i) => {
+      const actif = i === activeIdx;
+      const c = actif ? cocked : 0.12;      // la tête en attente reste basse
+      const at = actif ? attach : 0;
+      H.wrist.rotation.z = lerp(-0.62, 0.42, c);
+      H.arm.rotation.z = lerp(-0.05, 0.1, c) - at * 0.06;
+      H.arm.rotation.x = H.sgn * (0.22 - at * 0.1);
+      H.arm.position.y = 0.45 + at * 0.1;
+    });
 
-    /* Le filament mince avance pendant le temps 4 et GARDE son avance : au temps 5
-       la tête se détache, elle ne ramène pas l'actine avec elle. Sans ce palier, le
-       filament repartait en arrière au moment du détachement — l'inverse de ce que
-       le cours décrit. Le gain n'est verse dans slide qu'au bouclage du cycle. */
-    const gained = slide + (step === 4 ? stroking * SLIDE_STEP : (step === 5 ? SLIDE_STEP : 0));
-    thin.position.x = BASE_X - gained;
+    const gained = slide + (step === 4 ? stroking * SLIDE_STEP : (step >= 5 ? SLIDE_STEP : 0));
+    // On ne déplace jamais le filament de plus d'une période : le motif étant
+    // exactement périodique, le raccord ne se voit pas et le glissement peut durer
+    // indéfiniment. Le compteur, lui, garde le total vrai.
+    thin.position.x = -(gained % PERIODE);
 
-    // jetons
-    atpTag.visible = (step === 1) || (step === 5);
-    adpTag.visible = (step === 2) || (step === 3) || (step === 4 && u < 0.5);
-    const hx = arm.position.x + 0.3, hy = arm.position.y + 1.05;
-    atpTag.position.set(hx - 0.75, hy + 0.28, 0.3);
-    adpTag.position.set(hx - 0.95, hy + 0.28, 0.3);
-    if (step === 4) adpTag.position.y += e * 0.7;         // l'ADP et le Pi s'échappent
-    if (step === 5) atpTag.position.x -= (1 - e) * 1.4;   // le nouvel ATP arrive de la gauche
+    /* --- ballet des molécules ------------------------------------------
+       1 : l'ATP est dans la poche.
+       2 : il se coupe — l'ADP reste, le Pi se sépare (c'est l'hydrolyse).
+       3 : ADP et Pi toujours en place, la tête se fixe.
+       4 : le Pi part d'abord, puis l'ADP, et le levier bascule.
+       5 : un ATP neuf arrive du milieu et chasse la tête de l'actine.        */
+    const H = HEADS[activeIdx];
+    H.pocket.getWorldPosition(_v);
+    const pocket = g.worldToLocal(_v.clone());
+    const away = pocket.clone().add(new THREE.Vector3(-0.15, 0.95, 0.35));
+
+    let showATP = false, showADP = false, showPi = false;
+    let pATP = pocket.clone(), pADP = pocket.clone(), pPi = pocket.clone();
+    if (step === 0 || step === 1 || step === 6) {
+      showATP = true;
+    } else if (step === 2) {
+      // l'ATP devient ADP + Pi : on échange les modèles à mi-parcours
+      if (e < 0.45) { showATP = true; }
+      else {
+        showADP = true; showPi = true;
+        pPi = pocket.clone().add(new THREE.Vector3(0.26 * smooth((e - 0.45) / 0.55), 0.16, 0));
+      }
+    } else if (step === 3) {
+      showADP = true; showPi = true;
+      pPi = pocket.clone().add(new THREE.Vector3(0.26, 0.16, 0));
+    } else if (step === 4) {
+      showADP = e < 0.75; showPi = e < 0.45;
+      pPi = pocket.clone().add(new THREE.Vector3(0.26, 0.16, 0)).lerp(away, smooth(e / 0.45));
+      if (e > 0.3) pADP = pocket.clone().lerp(away, smooth((e - 0.3) / 0.45));
+    } else if (step === 5) {
+      showATP = true;
+      pATP = away.clone().lerp(pocket, e);   // le nouvel ATP arrive
+    }
+    poseMolecule(mATP, tagATP, pATP, showATP, 0.3);
+    poseMolecule(mADP, tagADP, pADP, showADP, 0.3);
+    poseMolecule(mPi, tagPi, pPi, showPi, 0.22);
     return gained;
   }
-  function commit() { slide = Math.min(slide + SLIDE_STEP, 1.7); }
-  function reset() { slide = 0; }
+  const activeHead = () => activeIdx;
+  // un monomère d'actine = 5,5 nm : on convertit le chemin parcouru
+  const bilan = (cyc, step) => {
+    const n = (cyc || 0) + (step >= 5 ? 1 : 0);   // le 5e temps clôt le coup en cours
+    return { cycles: cyc || 0, monomeres: n, nm: n * 5.5 };
+  };
 
-  return { group: g, update, commit, reset };
+  return { group: g, update, activeHead, bilan };
 })();
 
 scene.add(SARCO.group);
@@ -620,14 +756,21 @@ const ETATS = [
 ];
 const TEMPS = [
   { kick: 'déclencheur', titre: 'Le calcium découvre les sites', txt: "Le Ca²⁺ libéré par le réticulum sarcoplasmique se fixe sur la troponine. La tropomyosine pivote et dégage les sites de liaison de la myosine sur l'actine : la contraction devient possible." },
-  { kick: 'temps 1 sur 5', titre: 'Tête liée à l\'ATP', txt: "Avant la contraction, la tête de myosine porte une molécule d'ATP. Elle est en configuration de basse énergie, repliée, et détachée de l'actine." },
-  { kick: 'temps 2 sur 5', titre: 'Hydrolyse de l\'ATP', txt: "La tête hydrolyse l'ATP en ADP et en phosphate inorganique (Pi). Elle adopte sa configuration de haute énergie : la tête se redresse, armée comme un ressort." },
-  { kick: 'temps 3 sur 5', titre: 'Formation du pont', txt: "La tête redressée se fixe sur un site de liaison de l'actine. Le pont d'union est formé — c'est lui qui donne son nom au mécanisme." },
-  { kick: 'temps 4 sur 5', titre: 'Bascule : le filament glisse', txt: "La myosine libère l'ADP et le Pi, et revient à sa configuration de basse énergie. C'est cette bascule qui tire le filament mince vers le centre du sarcomère." },
-  { kick: 'temps 5 sur 5', titre: 'Détachement par un nouvel ATP', txt: "Une nouvelle molécule d'ATP se fixe sur la tête et la détache de l'actine. Un nouveau cycle peut commencer — sans ATP, la tête resterait collée (c'est la rigidité cadavérique)." }
+  { kick: 'temps 1 sur 5', titre: 'Tête liée à l\'ATP', txt: "La tête active porte une molécule d'ATP — la grosse pastille jaune — dans sa poche à nucléotide. Elle est en configuration de basse énergie, repliée, détachée de l'actine." },
+  { kick: 'temps 2 sur 5', titre: 'Hydrolyse de l\'ATP', txt: "La molécule se coupe en deux : il reste un ADP, un peu plus petit, et un phosphate inorganique (Pi) libre, la petite pastille orange. La tête se redresse — configuration de haute énergie, armée comme un ressort." },
+  { kick: 'temps 3 sur 5', titre: 'Formation du pont', txt: "La tête redressée se fixe sur un site de liaison de l'actine. Le pont d'union est formé — c'est lui qui donne son nom au mécanisme. L'ADP et le Pi sont encore logés dans la poche." },
+  { kick: 'temps 4 sur 5', titre: 'Bascule : le filament glisse', txt: "Le Pi s'échappe le premier, puis l'ADP. Le levier revient à sa configuration de basse énergie, et c'est cette bascule qui tire le filament mince d'un cran vers le centre du sarcomère." },
+  { kick: 'temps 5 sur 5', titre: 'Détachement par un nouvel ATP', txt: "Un ATP neuf arrive du milieu, se loge dans la poche et détache la tête de l'actine. L'autre tête prend alors le relais. Sans ATP, la tête resterait collée : c'est la rigidité cadavérique." },
+  { kick: 'relâchement', titre: 'Le calcium repart, les sites se referment', txt: "L'influx nerveux cesse : le Ca²⁺ est repompé dans le réticulum sarcoplasmique par transport actif. La troponine le relâche, la tropomyosine repivote et recouvre les sites de liaison. Les têtes ne peuvent plus se fixer — le filament s'immobilise." }
+];
+const RELACHE = [
+  { seuil: 0.55, kick: 'relâchement · 1 sur 2', titre: 'Le calcium regagne le réticulum',
+    txt: "L'influx nerveux cesse. Le Ca²⁺ est repompé dans le réticulum sarcoplasmique par transport actif — une pompe qui consomme de l'ATP, tout comme la contraction. La troponine le relâche et la tropomyosine recouvre les sites." },
+  { seuil: 1.01, kick: 'relâchement · 2 sur 2', titre: 'Retour à la longueur de repos',
+    txt: "Plus aucun pont ne peut se former : le sarcomère cesse de se raccourcir. Il ne se rallonge pas de lui-même pour autant — ce sont l'élasticité de la titine, la charge et les muscles antagonistes qui le réétirent." }
 ];
 const REGLE_A = "<b>Invariant :</b> la longueur des myofilaments épais et celle des myofilaments minces ne changent pas. Seul leur chevauchement change.";
-const REGLE_B = "<b>Invariant :</b> chaque cycle ne gagne qu'un pas. C'est la répétition, sur des milliers de têtes, qui raccourcit le sarcomère.";
+const REGLE_B = "<b>Un pas = un monomère.</b> La course du levier vaut 5,2 à 5,5 nm, et les monomères d'actine sont espacés de 5,5 nm : un coup de rame avance le filament d'exactement une perle.<br><br><b>Licence prise ici :</b> les deux têtes alternent, pour la lisibilité. Dans le muscle elles travaillent en réalité de façon indépendante, et la myosine II est non-processive — elle lâche l'actine à chaque cycle. C'est l'action collective de milliers de têtes qui entretient le mouvement, pas une marche à deux pieds : ça, c'est la myosine V.";
 
 /* ============================================================================
    6. HUD
@@ -637,9 +780,23 @@ const noteKick = el('noteKick'), noteTitle = el('noteTitle'), noteText = el('not
 const fill = el('fill'), knob = el('knob'), track = el('track'), ticks = el('ticks');
 const lab = el('lab'), playBtn = el('play');
 
+const SPAN_A = 2;        // scène 1 : 0→1 la contraction, 1→2 le relâchement
+const CYCLES = 4;        // deux coups de rame par tête : A, B, A, B
+const CYCLE_END = 1 + CYCLES * 5;   // le déclencheur, puis quatre fois les cinq temps
+const SPAN = CYCLE_END + 1;         // et pour finir, le relâchement
+/* décompose la timeline de la scène 2 en (déclencheur | temps, cycle, avancement) */
+function phasePont(x) {
+  const tt = Math.max(0, Math.min(x, SPAN - 1e-4));
+  if (tt < 1) return { step: 0, cyc: 0, u: tt };
+  if (tt >= CYCLE_END) return { step: 6, cyc: CYCLES - 1, u: tt - CYCLE_END };
+  const k = tt - 1;
+  return { step: (Math.floor(k) % 5) + 1, cyc: Math.floor(k / 5), u: k % 1 };
+}
 let scene_ = 0;          // 0 = glissement, 1 = pont d'union
 let t = 0;               // avancement : [0,1] en scène A, [0,6] en scène B
 let playing = true;
+let looping = false;         // éteinte au départ : l'animation joue une fois, puis attend
+let coupsFaits = 0;          // coups de rame donnés avant le groupe en cours
 let phase = 0;           // rame des têtes, scène A
 
 function setScene(n) {
@@ -649,36 +806,50 @@ function setScene(n) {
   el('tab0').setAttribute('aria-selected', n === 0 ? 'true' : 'false');
   el('tab1').setAttribute('aria-selected', n === 1 ? 'true' : 'false');
   el('schema').style.display = n === 0 ? '' : 'none';
-  el('meas').style.display = n === 0 ? '' : 'none';
+  el('keyMol').style.display = n === 1 ? 'flex' : 'none';
+  el('meas').style.display = '';
+  // les trois mesures ne disent pas la même chose d'une scène à l'autre
+  el('t1').textContent = n === 0 ? 'Bande A · myosine' : 'Un coup de rame';
+  el('t2').textContent = n === 0 ? 'Bande I · actine seule' : 'Actine parcourue';
+  el('t3').textContent = n === 0 ? 'Sarcomère · Z à Z' : 'Coups donnés';
   noteRule.innerHTML = n === 0 ? REGLE_A : REGLE_B;
   ticks.innerHTML = '';
-  if (n === 1) {
-    for (let i = 1; i < 6; i++) {
-      const i2 = document.createElement('i');
-      i2.style.left = (i / 6 * 100) + '%';
-      ticks.appendChild(i2);
-    }
+  const poser = (pct) => { const i2 = document.createElement('i'); i2.style.left = pct + '%'; ticks.appendChild(i2); };
+  if (n === 0) poser(50);                       // la bascule contraction / relâchement
+  else {
+    for (let i = 0; i < CYCLES; i++) poser((1 + i * 5) / SPAN * 100);
+    poser(CYCLE_END / SPAN * 100);              // l'entrée en relâchement
   }
   t = 0;
-  PONT.reset();
+  coupsFaits = 0;
   cam.tRad = n === 0 ? 7.6 : 8.4;
 }
 el('tab0').addEventListener('click', () => setScene(0));
 el('tab1').addEventListener('click', () => setScene(1));
 playBtn.addEventListener('click', () => {
+  // au bout de la scène 1, lecture veut dire « rejouer » : sans ça le bouton
+  // semblait mort une fois la contraction terminée.
+  if (!playing && scene_ === 0 && t >= SPAN_A) t = 0;
+  if (!playing && scene_ === 1 && t >= SPAN) { t = 0; coupsFaits = 0; }
   playing = !playing;
   playBtn.textContent = playing ? '❚❚' : '►';
 });
-el('reset').addEventListener('click', () => { t = 0; PONT.reset(); });
+const loopBtn = el('loopBtn');
+loopBtn.addEventListener('click', () => {
+  looping = !looping;
+  loopBtn.classList.toggle('on', looping);
+  loopBtn.setAttribute('aria-pressed', looping ? 'true' : 'false');
+});
+el('reset').addEventListener('click', () => { t = 0; coupsFaits = 0; });
 
 /* glissière : on écrit directement, sans passer par un rendu de gabarit */
 function scrub(ev) {
   const r = track.getBoundingClientRect();
   const u = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
-  const span = scene_ === 0 ? 1 : 6;
-  const nt = u * span;
-  if (scene_ === 1) PONT.reset();      // on repart du même terrain quand on rembobine
-  t = nt;
+  // la scène 2 étant pilotée par la timeline, rembobiner replace tout : plus rien
+  // à remettre à zéro à la main.
+  if (scene_ === 1) coupsFaits = 0;     // la glissière montre le premier groupe
+  t = u * (scene_ === 0 ? SPAN_A : SPAN);
   playing = false;
   playBtn.textContent = '►';
 }
@@ -762,28 +933,42 @@ resize();
 /* ============================================================================
    9. BOUCLE
    ========================================================================== */
-let last = 0, prevStep = 0;
+let last = 0;
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (last || now)) / 1000); last = now;
 
   if (playing) {
     if (scene_ === 0) {
-      t += dt * 0.28;
-      if (t > 1) t = 1;                       // on s'arrête sur la contraction complète
-      if (t >= 1) { playing = false; playBtn.textContent = '►'; }
+      t += dt * 0.24;
+      if (t >= SPAN_A) {
+        if (looping) t = 0;                   // on rejoue la secousse entière
+        else { t = SPAN_A; playing = false; playBtn.textContent = '►'; }
+      }
     } else {
-      t += dt * 0.42;
-      if (t >= 6) { t = 1; PONT.commit(); }   // un cycle de plus, on saute le déclencheur
+      // cadence ralentie : le coup de rame ne vaut qu'un monomère, il faut le temps
+      // de le voir. En boucle, chaque cycle ajoute un cran et l'autre tête prend
+      // le relais — c'est le cumul qui rend le glissement lisible.
+      t += dt * 0.72;   // ~1,4 s par temps : assez pour lire, assez pour que les crans s'accumulent
+      if (looping && t >= CYCLE_END) {
+        // on enchaîne : ni retour au déclencheur, ni actine remise à sa place.
+        // Le relâchement n'a pas lieu — le muscle reste stimulé.
+        t -= CYCLES * 5;
+        coupsFaits += CYCLES;
+      } else if (t >= SPAN) { t = SPAN; playing = false; playBtn.textContent = '►'; }
     }
   }
   phase += dt * (scene_ === 0 ? 0.8 : 0);
 
   if (scene_ === 0) {
-    const c = Math.max(0, Math.min(1, t));
+    // aller puis retour : 0→1 on se contracte, 1→2 on se relâche
+    const relache = t > 1;
+    const c = Math.max(0, Math.min(1, relache ? 2 - t : t));
     SARCO.update(c, phase);
     drawSchema(c);
-    const e = ETATS.find(s => c < s.seuil) || ETATS[2];
+    const e = relache
+      ? (RELACHE.find(s => (t - 1) < s.seuil) || RELACHE[1])
+      : (ETATS.find(s => c < s.seuil) || ETATS[2]);
     noteKick.textContent = e.kick; noteTitle.textContent = e.titre; noteText.textContent = e.txt;
     const zx = lerp(SARCO.Z0, SARCO.ZMIN, c);
     // « µm » : le sarcomère fait environ 2 µm au repos, on cale l'échelle dessus
@@ -791,18 +976,27 @@ function loop(now) {
     el('mA').textContent = (SARCO.MHALF * 2 * K).toFixed(2) + ' µm — constante';
     el('mI').textContent = Math.max(0, (zx - SARCO.MHALF) * 2 * K).toFixed(2) + ' µm';
     el('mZ').textContent = (zx * 2 * K).toFixed(2) + ' µm';
-    lab.textContent = 'Contraction ' + Math.round(c * 100) + ' %';
-    fill.style.width = (c * 100) + '%';
-    knob.style.left = (c * 100) + '%';
+    lab.textContent = (relache ? 'Relâchement ' + Math.round((t - 1) * 100) : 'Contraction ' + Math.round(c * 100)) + ' %';
+    const pa = t / SPAN_A * 100;
+    fill.style.width = pa + '%';
+    knob.style.left = pa + '%';
   } else {
-    const step = Math.min(5, Math.floor(t));
-    const u = t - step;
-    if (step !== prevStep) prevStep = step;
-    PONT.update(step, u);
-    const d = TEMPS[step];
-    noteKick.textContent = d.kick; noteTitle.textContent = d.titre; noteText.textContent = d.txt;
-    lab.textContent = d.kick.charAt(0).toUpperCase() + d.kick.slice(1) + ' — ' + d.titre;
-    const p = t / 6 * 100;
+    const ph = phasePont(t);
+    const coup = coupsFaits + ph.cyc;          // numéro absolu, jamais remis à zéro
+    PONT.update(ph.step, ph.u, coup);
+    const d = TEMPS[ph.step];
+    const tete = ph.step === 0 ? '' : ' · tête ' + (PONT.activeHead() ? 'B' : 'A');
+    const num = ph.step === 0 ? '' : ' · coup ' + (coup + 1);
+    noteKick.textContent = d.kick + tete + num;
+    noteTitle.textContent = d.titre; noteText.textContent = d.txt;
+    lab.textContent = ph.step === 0
+      ? 'Déclencheur — ' + d.titre
+      : 'Coup ' + (coup + 1) + ' · tête ' + (PONT.activeHead() ? 'B' : 'A') + ' — ' + d.titre;
+    const bl = PONT.bilan(coup, ph.step);
+    el('mA').textContent = '5,5 nm — un monomère';
+    el('mI').textContent = bl.monomeres + ' monomères · ' + Math.round(bl.nm) + ' nm';
+    el('mZ').textContent = String(bl.monomeres);
+    const p = t / SPAN * 100;
     fill.style.width = p + '%';
     knob.style.left = p + '%';
   }

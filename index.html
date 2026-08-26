@@ -1648,6 +1648,19 @@ window.onCellIntroChoice = window.onCellIntroChoice || function (sp) {
       // Le fond est calé sur celui de la page chargée, pour qu'il n'y ait pas de flash clair
       // entre l'affichage de l'iframe et sa première image.
       f.style.cssText = 'position:fixed; inset:0; width:100%; height:100%; border:0; z-index:60; display:none; background:' + def.bg + ';';
+      // L'iframe ne montre pas toujours une cellule : depuis la fibre musculaire on peut
+      // ouvrir l'atlas de la contraction, qui n'en est pas une. « Changer de cellule »,
+      // posé par-dessus l'iframe, n'y a alors aucun sens — on l'efface le temps de la
+      // visite, et on ne le rend que si c'est nous qui l'avions caché.
+      f.addEventListener('load', function () {
+        var b = document.getElementById('cellBack');
+        if (!b) return;
+        var path = '';
+        try { path = (f.contentWindow.location.pathname || ''); } catch (e) { return; }
+        var estCellule = /cellule-[a-z]+\.html$/.test(path);
+        if (!estCellule) { b.dataset.hidPage = '1'; b.style.display = 'none'; }
+        else if (b.dataset.hidPage) { delete b.dataset.hidPage; b.style.display = 'flex'; }
+      });
       document.getElementById('cellFrames').appendChild(f);
     }
     return f;
