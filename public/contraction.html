@@ -200,6 +200,14 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 #key #keyMol,#key #keySR{gap:3px;flex-wrap:wrap;max-width:206px}
 #key i{width:9px;height:9px;border-radius:2px;flex:none}
 
+/* ---- nom de la piece survolee -------------------------------------------
+   Suit le pointeur, ne l'intercepte jamais. Juste le nom : le commentaire et le
+   tiroir des molecules disent deja tout le reste.                            */
+#tip{position:fixed;z-index:7;pointer-events:none;opacity:0;
+  transform:translate(-50%,-150%);padding:5px 9px;border-radius:7px;white-space:nowrap;
+  background:var(--glass);border:1px solid var(--line);color:var(--fg);
+  font:400 11px/1 var(--mono);transition:opacity .12s}
+
 /* ============================================================================
    ATLAS DES MOLECULES — panneau plein ecran
    Trois colonnes : la liste, la structure, la fiche. Meme decoupage que l'atlas
@@ -431,6 +439,8 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
     <div class="knob" id="knob"></div>
   </div>
 </div>
+
+<div id="tip"></div>
 
 <div id="key">
   <div><i style="background:#c0454f"></i>Myofilament épais — myosine</div>
@@ -686,6 +696,16 @@ function labelSprite(text, color) {
   sp.scale.set(cv.width / cv.height * 0.3, 0.3, 1);
   return sp;
 }
+/* Registre des noms — une pièce = un matériau. Le modèle donne déjà à chaque
+   pièce son propre matériau ; il suffit donc de lui accrocher un nom, et le
+   survol le retrouve depuis ce que le rayon a touché, sans rien marquer sur les
+   objets eux-mêmes. On garde aussi l'émission d'origine, pour savoir à quoi la
+   rendre quand le pointeur repart. */
+const NOMS = new Map();
+function nommer(m, nom) {
+  NOMS.set(m, { nom, e0: m.emissive.getHex(), i0: m.emissiveIntensity });
+  return m;
+}
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
 
@@ -716,7 +736,7 @@ const SARCO = (() => {
   const ALEN = Z0 - 0.43;     // longueur du filament mince — invariable
 
   /* --- stries Z : deux disques, qui se rapprochent ------------------------ */
-  const zMat = mat(COL.z, { roughness: 0.5, side: THREE.DoubleSide });
+  const zMat = nommer(mat(COL.z, { roughness: 0.5, side: THREE.DoubleSide }), 'Strie Z');
   const zDiscs = [-1, 1].map(sgn => {
     const grp = new THREE.Group();
     grp.add(new THREE.Mesh(xCyl(0.78, 0.78, 0.06, 44), zMat));
@@ -732,7 +752,7 @@ const SARCO = (() => {
   });
 
   /* --- filaments minces : longueur figée, ancrés sur leur strie Z ---------- */
-  const aMat = mat(COL.actine, { roughness: 0.5 });
+  const aMat = nommer(mat(COL.actine, { roughness: 0.5 }), 'Myofilament mince — actine');
   const aGeo = xCyl(0.03, 0.03, ALEN, 10);
   const actin = [-1, 1].map(sgn => {
     const im = inst(aGeo, aMat, tri.map(p => [0, p[0], p[1]]));
@@ -742,7 +762,7 @@ const SARCO = (() => {
   });
 
   /* --- filaments épais : immobiles, c'est la référence -------------------- */
-  const mMat = mat(COL.myosine, { roughness: 0.5 });
+  const mMat = nommer(mat(COL.myosine, { roughness: 0.5 }), 'Myofilament épais — myosine');
   const mGeo = xCyl(0.052, 0.052, MHALF * 2, 16);
   hex.forEach(p => {
     const m = new THREE.Mesh(mGeo, mMat);
@@ -760,13 +780,13 @@ const SARCO = (() => {
     }
   });
   const hGeo = new THREE.SphereGeometry(0.036, 8, 6); hGeo.scale(1.1, 1.9, 1.1);
-  const headMesh = new THREE.InstancedMesh(hGeo, mat(COL.tete, { roughness: 0.42 }), heads.length);
+  const headMesh = new THREE.InstancedMesh(hGeo, nommer(mat(COL.tete, { roughness: 0.42 }), 'Têtes de myosine'), heads.length);
   g.add(headMesh);
   const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(),
     _s = new THREE.Vector3(1, 1, 1), _ax = new THREE.Vector3(1, 0, 0);
 
   /* --- ligne M ------------------------------------------------------------ */
-  const mlMat = mat(COL.ligneM, { roughness: 0.45, side: THREE.DoubleSide });
+  const mlMat = nommer(mat(COL.ligneM, { roughness: 0.45, side: THREE.DoubleSide }), 'Ligne M');
   g.add(new THREE.Mesh(xCyl(0.64, 0.64, 0.035, 40), mlMat));
   for (let k = 0; k < 14; k++) {
     const a = k / 14 * Math.PI * 2;
@@ -780,7 +800,7 @@ const SARCO = (() => {
      la seule pièce dont la longueur CHANGE, et c'est fidèle : la titine est
      élastique, les myofilaments ne le sont pas. */
   const L0 = Z0 - MHALF;
-  const tMat = mat(COL.titine, { roughness: 0.45 });
+  const tMat = nommer(mat(COL.titine, { roughness: 0.45 }), 'Titine');
   const titin = [-1, 1].map(sgn => {
     const grp = new THREE.Group();
     hex.forEach(p => {
@@ -810,7 +830,7 @@ const SARCO = (() => {
      c'est un repère fixe, puisque c'est le bord du filament épais. À la contraction
      maximale la strie Z vient donc les frôler, et la bande I a disparu.          */
   const RS_R = 0.9;
-  const rsMat = mat(COL.rs, { roughness: 0.5, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false });
+  const rsMat = nommer(mat(COL.rs, { roughness: 0.5, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false }), 'Réticulum sarcoplasmique');
   g.add(new THREE.Mesh(fenestra({
     x0: -MHALF, x1: MHALF, rad: RS_R, th: 0.05, nu: 66, nv: 30,
     fx: 3.6, fa: 3.2, thr: -0.25, solid: [[0.02, 0.05], [0.98, 0.05]]
@@ -832,8 +852,8 @@ const SARCO = (() => {
      citerne — une dyade. Le tubule T n'appartient pas au réticulum : c'est une
      invagination du sarcolemme, d'où sa couleur à part.                          */
   const TRI_R = RS_R + 0.06;
-  const cisMat = mat(COL.citerne, { roughness: 0.4, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
-  const ttMat = mat(COL.tubuleT, { roughness: 0.42, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+  const cisMat = nommer(mat(COL.citerne, { roughness: 0.4, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }), 'Citerne terminale');
+  const ttMat = nommer(mat(COL.tubuleT, { roughness: 0.42, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }), 'Tubule transverse');
   [-1, 1].forEach(sgn => {
     [-0.17, 0.17].forEach(dx => {
       const ci = new THREE.Mesh(new THREE.TorusGeometry(TRI_R, 0.1, 10, 44), cisMat);
@@ -869,7 +889,7 @@ const SARCO = (() => {
   }
   const caMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.037, 8, 6),
-    mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5 }),
+    nommer(mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5 }), 'Ion Ca²⁺'),
     CA_N);
   g.add(caMesh);
 
@@ -934,12 +954,14 @@ const PONT = (() => {
   g.visible = false;
 
   /* --- filament épais, en bas -------------------------------------------- */
-  const thick = new THREE.Mesh(xCyl(0.26, 0.26, 4.0, 28), mat(COL.myosine, { roughness: 0.5 }));
+  const thick = new THREE.Mesh(xCyl(0.26, 0.26, 4.0, 28), nommer(mat(COL.myosine, { roughness: 0.5 }), 'Myofilament épais — myosine'));
   thick.position.set(0, -0.95, 0);
   g.add(thick);
+  // Sorti de la boucle : un matériau par pièce, c'est lui qui porte le nom.
+  const bumpMat = nommer(mat(0xa93a45, { roughness: 0.55 }), 'Têtes de myosine voisines');
   for (let k = 0; k < 20; k++) {           // torsades du filament épais
     const t = k / 20 * Math.PI * 2 * 3;
-    const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), mat(0xa93a45, { roughness: 0.55 }));
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), bumpMat);
     b.position.set(-1.85 + k * 0.195, -0.95 + Math.cos(t) * 0.27, Math.sin(t) * 0.27);
     g.add(b);
   }
@@ -947,13 +969,13 @@ const PONT = (() => {
   /* --- filament mince : deux brins de perles + tropomyosine + troponine --- */
   const thin = new THREE.Group();
   const beadGeo = new THREE.SphereGeometry(0.15, 14, 11);
-  const beadMat = mat(COL.actine, { roughness: 0.48 });
+  const beadMat = nommer(mat(COL.actine, { roughness: 0.48 }), 'Myofilament mince — actine');
   const N = 64, STEP = 0.26;               // STEP = un monomère d'actine (5,5 nm)
   const TWIST = Math.PI * 2 / 10;          // un tour tous les 10 monomères, tout rond
   const PERIODE = 10 * STEP;               // longueur au bout de laquelle le motif se répète
   const X0 = -7.0;                         // débordement asymétrique : la marge est à droite,
                                            // c'est de ce côté que le bouclage la consomme
-  const markMat = mat(0xffd9a0, { roughness: 0.35, emissive: 0x6b4a1a, emissiveIntensity: 0.5 });
+  const markMat = nommer(mat(0xffd9a0, { roughness: 0.35, emissive: 0x6b4a1a, emissiveIntensity: 0.5 }), 'Monomère repère');
   for (let k = 0; k < N; k++) {
     const t = k * TWIST;
     [1, -1].forEach(s => {
@@ -965,7 +987,7 @@ const PONT = (() => {
       thin.add(b);
     });
   }
-  const tropoMat = mat(COL.tropo, { roughness: 0.6 });
+  const tropoMat = nommer(mat(COL.tropo, { roughness: 0.6 }), 'Tropomyosine');
   const tropo = [1, -1].map(s => {
     const pts = [];
     for (let k = 0; k <= 130; k++) {
@@ -976,16 +998,17 @@ const PONT = (() => {
     thin.add(m);
     return m;
   });
+  const tnMat = nommer(mat(COL.troponine, { roughness: 0.4 }), 'Troponine');
   const tropoNine = [];
   for (let k = 2; k < N - 2; k += 5) {          // 5 divise 10 : le motif reste périodique
     const t = k * TWIST;
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), mat(COL.troponine, { roughness: 0.4 }));
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), tnMat);
     m.position.set(X0 + k * STEP, Math.cos(t) * 0.2, Math.sin(t) * 0.2 + 0.06);
     thin.add(m); tropoNine.push(m);
   }
-  const siteMat = new THREE.MeshStandardMaterial({
+  const siteMat = nommer(new THREE.MeshStandardMaterial({
     color: 0x8ff0c4, roughness: 0.3, emissive: 0x2f7f5e, emissiveIntensity: 0, transparent: true, opacity: 0
-  });
+  }), 'Site de liaison de la myosine');
   const sites = [];
   for (let k = 5; k < N - 3; k += 5) {          // idem : un site tous les 5 monomères
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), siteMat);
@@ -996,9 +1019,9 @@ const PONT = (() => {
   g.add(thin);
 
   /* --- LA MOLÉCULE DE MYOSINE : une queue, deux cols, deux têtes ---------- */
-  const myoMat = mat(0xd4525f, { roughness: 0.45 });
-  const headMat = mat(COL.tete, { roughness: 0.4 });
-  const lightMat = mat(0xf0b49a, { roughness: 0.5 });   // chaînes légères du col
+  const myoMat = nommer(mat(0xd4525f, { roughness: 0.45 }), 'Molécule de myosine');
+  const headMat = nommer(mat(COL.tete, { roughness: 0.4 }), 'Tête de myosine');
+  const lightMat = nommer(mat(0xf0b49a, { roughness: 0.5 }), 'Chaînes légères');   // chaînes légères du col
 
   const dimer = new THREE.Group();
   dimer.position.set(0, -0.72, 0.16);
@@ -1061,14 +1084,14 @@ const PONT = (() => {
      dessine l'ATP en pastille jaune. La taille décroît avec la molécule :
      ATP > ADP > Pi, et le calcium est un simple ion.                          */
   const MOL = {
-    atp: { c: 0xf0d264, r: 0.125, e: 0x6b5312 },
-    adp: { c: 0xd9a94e, r: 0.105, e: 0x5c4210 },
-    pi:  { c: 0xf0901f, r: 0.068, e: 0x6b3c08 }
+    atp: { c: 0xf0d264, r: 0.125, e: 0x6b5312, n: 'ATP' },
+    adp: { c: 0xd9a94e, r: 0.105, e: 0x5c4210, n: 'ADP' },
+    pi:  { c: 0xf0901f, r: 0.068, e: 0x6b3c08, n: 'Phosphate inorganique (Pi)' }
   };
   function blob(def) {
     const m = new THREE.Mesh(
       new THREE.SphereGeometry(def.r, 20, 15),
-      mat(def.c, { roughness: 0.28, metalness: 0.06, emissive: def.e, emissiveIntensity: 0.55 })
+      nommer(mat(def.c, { roughness: 0.28, metalness: 0.06, emissive: def.e, emissiveIntensity: 0.55 }), def.n)
     );
     m.visible = false;
     g.add(m);
@@ -1084,7 +1107,7 @@ const PONT = (() => {
 
   /* --- calcium : des ions, pas des billes anonymes ------------------------ */
   const caGeo = new THREE.SphereGeometry(0.085, 12, 9);
-  const caMat = mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5, transparent: true, opacity: 0 });
+  const caMat = nommer(mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5, transparent: true, opacity: 0 }), 'Ion Ca²⁺');
   const cas = [];
   let cseed = 7;
   const crnd = () => ((cseed = (cseed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
@@ -1284,8 +1307,12 @@ let looping = false;         // éteinte au départ : l'animation joue une fois,
 let coupsFaits = 0;          // coups de rame donnés avant le groupe en cours
 let phase = 0;           // rame des têtes, scène A
 
+// Posée ici, remplie par la section « noms au survol » : changer de scène doit
+// éteindre la pièce éclairée, sinon elle resterait allumée dans une scène cachée.
+let eteindreSurvol = () => {};
 function setScene(n) {
   scene_ = n;
+  eteindreSurvol();
   SARCO.group.visible = n === 0;
   PONT.group.visible = n === 1;
   el('tab0').setAttribute('aria-selected', n === 0 ? 'true' : 'false');
@@ -1434,6 +1461,75 @@ window.addEventListener('atlas:open', () => { inBackground = true; });
 window.addEventListener('atlas:close', () => { inBackground = false; });
 
 let last = 0;
+/* ============================================================================
+   NOMS AU SURVOL
+   Chaque pièce du modèle porte un nom, accroché à son matériau (cf. nommer()).
+   Le pointeur en désigne une : elle s'éclaire un peu, et son nom s'affiche.
+   Rien de plus — pas de fiche, pas de panneau : la lecture ne doit pas quitter
+   l'animation.
+   ========================================================================== */
+{
+  const cv = renderer.domElement;
+  const tip = el('tip');
+  const ray = new THREE.Raycaster();
+  const ptr = new THREE.Vector2();
+  let vise = null;                       // matériau actuellement éclairé
+
+  const eteindre = () => {
+    if (!vise) return;
+    const d = NOMS.get(vise);
+    vise.emissive.setHex(d.e0);
+    vise.emissiveIntensity = d.i0;
+    vise = null;
+    tip.style.opacity = '0';
+  };
+  const allumer = (m) => {
+    if (m === vise) return;
+    eteindre();
+    const d = NOMS.get(m);
+    /* L'éclat reprend la couleur de la pièce : elle se signale sans changer de teinte.
+       L'intensité, elle, ne se lit pas sur i0 : `emissiveIntensity` vaut 1 par défaut
+       — mais avec une émission NOIRE, donc une pièce qui n'émet rien. La reprendre
+       telle quelle rendait la pièce auto-éclairée à fond (la strie Z virait au blanc).
+       C'est l'émission d'origine qui dit si la pièce brillait déjà. */
+    m.emissive.copy(m.color);
+    m.emissiveIntensity = d.e0 ? d.i0 * 1.5 : 0.22;
+    vise = m;
+    tip.textContent = d.nom;
+    tip.style.opacity = '1';
+  };
+  eteindreSurvol = eteindre;
+
+  cv.addEventListener('pointermove', ev => {
+    // Bouton enfoncé : on est en train d'orbiter, la main est occupée.
+    if (ev.buttons) { eteindre(); return; }
+    const r = cv.getBoundingClientRect();
+    ptr.x = (ev.clientX - r.left) / r.width * 2 - 1;
+    ptr.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    ray.setFromCamera(ptr, camera);
+    const hits = ray.intersectObject(scene_ === 0 ? SARCO.group : PONT.group, true);
+    /* Une pièce translucide ne vole pas le survol de ce qu'elle laisse voir : le
+       manchon du réticulum couvre tout le sarcomère, et désigner les filaments à
+       travers lui doit rester possible. On prend donc la première pièce opaque
+       rencontrée, et la translucide seulement s'il n'y a rien derrière. */
+    let opaque = null, premier = null;
+    for (const h of hits) {
+      const m = h.object.material;
+      if (!NOMS.has(m)) continue;
+      if (m.transparent && m.opacity < 0.05) continue;   // pièce en sommeil, invisible
+      if (!premier) premier = m;
+      if (!m.transparent || m.opacity >= 0.6) { opaque = m; break; }
+    }
+    const cible = opaque || premier;
+    if (!cible) { eteindre(); return; }
+    allumer(cible);
+    tip.style.left = ev.clientX + 'px';
+    tip.style.top = ev.clientY + 'px';
+  });
+  cv.addEventListener('pointerleave', eteindre);
+  cv.addEventListener('pointerdown', eteindre);
+}
+
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (last || now)) / 1000); last = now;
