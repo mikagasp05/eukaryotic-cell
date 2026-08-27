@@ -182,7 +182,7 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 /* En bas a gauche, et non en haut au centre : la page est affichee en iframe dans
    index.html, dont le bouton « Changer de cellule » occupe deja ce coin-la, sur un
    plan superieur. Un lien pose au meme endroit aurait disparu dessous. */
-#back{position:fixed;left:24px;bottom:152px;z-index:6;
+#back{position:fixed;left:24px;bottom:186px;z-index:6;   /* au-dessus de la legende, qui a gagne le bloc du reticulum */
   padding:8px 14px;border-radius:9px;text-decoration:none;white-space:nowrap;
   background:var(--glass);border:1px solid var(--line);color:var(--fg-2);
   font:400 11px/1 var(--mono);transition:color .18s,border-color .18s,transform .18s}
@@ -197,7 +197,7 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
 /* ---- légende ------------------------------------------------------------- */
 #key{position:fixed;left:24px;bottom:22px;z-index:5;display:flex;flex-direction:column;gap:5px}
 #key div{display:flex;align-items:center;gap:8px;font:400 10px/1.4 var(--mono);color:var(--fg-2)}
-#key #keyMol{gap:3px;flex-wrap:wrap}
+#key #keyMol,#key #keySR{gap:3px;flex-wrap:wrap;max-width:206px}
 #key i{width:9px;height:9px;border-radius:2px;flex:none}
 
 /* ============================================================================
@@ -438,6 +438,15 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);overflow:hidden;co
   <div><i style="background:#f0d3c0"></i>Strie Z</div>
   <div><i style="background:#d9d16a"></i>Ligne M</div>
   <div><i style="background:#8fd0b0"></i>Titine</div>
+  <!-- En ligne et non en colonne : la légende est calée en bas à gauche, sous le
+       lien de retour posé à 152 px du bas. Quatre lignes de plus la lui feraient
+       percuter. -->
+  <div id="keySR" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--line)">
+    <i style="background:#7566b4"></i>Réticulum sarcoplasmique
+    <i style="background:#7fd0e8;margin-left:6px"></i>Citerne
+    <i style="background:#5a9ed6;margin-left:6px"></i>Tubule T
+    <i style="background:#7fe0a0;border-radius:50%;margin-left:6px"></i>Ca²⁺
+  </div>
   <div id="keyMol" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--line)">
     <i style="background:#f0d264;border-radius:50%"></i>ATP
     <i style="background:#d9a94e;border-radius:50%;margin-left:6px"></i>ADP
@@ -530,7 +539,10 @@ const d3 = new THREE.DirectionalLight(0xff9a86, 0.3); d3.position.set(0.5, -2.4,
 const COL = {
   z: 0xf0d3c0, actine: 0xe9b48f, myosine: 0xc0454f, tete: 0xe2606c,
   ligneM: 0xd9d16a, titine: 0x8fd0b0, calcium: 0x7fe0a0,
-  tropo: 0xd8cfc6, troponine: 0x9d7cc8, atp: 0xf0d264
+  tropo: 0xd8cfc6, troponine: 0x9d7cc8, atp: 0xf0d264,
+  // reticulum sarcoplasmique : memes teintes que la strate « sarcomere » de
+  // cellule-musculaire.html, pour qu'on reconnaisse les memes pieces d'une page a l'autre.
+  rs: 0x7566b4, citerne: 0x7fd0e8, tubuleT: 0x5a9ed6
 };
 const mat = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.52, metalness: 0 }, o || {}));
 /* cylindre couché sur X : trois filaments sur quatre le sont ici */
@@ -554,6 +566,96 @@ function inst(geo, material, list) {
 function tubeG(pts, rad, tSeg, rSeg) {
   const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])), false, 'catmullrom', 0.5);
   return new THREE.TubeGeometry(c, tSeg || 44, rad, rSeg || 6, false);
+}
+/* Bruit doux, borne, sans table : deux octaves de produits de sinus. Repris tel
+   quel de cellule-musculaire.html — c'est lui qui donne au reticulum ses fenetres
+   irregulieres plutot qu'une grille. */
+function nz(x, y, z) {
+  return Math.sin(x * 1.7 + 0.9) * Math.sin(y * 2.1 + 2.3) * Math.sin(z * 1.9 + 4.1)
+    + 0.55 * Math.sin(x * 3.7 + 1.7) * Math.sin(y * 4.3 + 0.4) * Math.sin(z * 3.1 + 2.9);
+}
+/* Manchon fenetre du reticulum sarcoplasmique.
+   Le RS n'est pas une cage de tubes paralleles : c'est une membrane CONTINUE plaquee
+   sur la myofibrille et percee d'ouvertures irregulieres, par lesquelles on voit les
+   filaments dessous. On maille donc une nappe cylindrique, on evide les mailles qui
+   tombent dans une fenetre, et on referme les bords par un lisere : la paroi a une
+   epaisseur, les trous sont de vrais trous. Normales posees a la main (radiales sur
+   les deux nappes, plates sur le lisere) — computeVertexNormals() moyennerait les
+   deux et arrondirait le bord des fenetres. */
+function fenestra(o) {
+  const nu = o.nu || 88, nv = o.nv || 34, TAU = Math.PI * 2;
+  const x0 = o.x0, x1 = o.x1, R = o.rad, th = o.th === undefined ? 0.05 : o.th;
+  const fx = o.fx === undefined ? 2.5 : o.fx, fa = o.fa === undefined ? 2.4 : o.fa;
+  const thr = o.thr === undefined ? 0.1 : o.thr, bands = o.bands || 0;
+  const pos = [], nor = [];
+
+  // Rayon legerement ondulant : une membrane, pas un tube de plomberie.
+  const RR = (u, a) => R * (1 + 0.05 * nz((x0 + (x1 - x0) * u) * 1.9, Math.cos(a) * 1.6, Math.sin(a) * 1.6));
+  // s = +1 nappe externe, -1 nappe interne.
+  const P = (u, a, s) => {
+    const r = RR(u, a) + s * th * 0.5;
+    return [x0 + (x1 - x0) * u, Math.cos(a) * r, Math.sin(a) * r];
+  };
+  const isHole = (u, a) => {
+    let f = nz((x0 + (x1 - x0) * u) * fx, Math.cos(a) * fa, Math.sin(a) * fa);
+    if (bands) f += 0.4 * Math.sin(u * Math.PI * bands);
+    return f > thr;
+  };
+
+  const H = [];
+  for (let i = 0; i < nu; i++) {
+    H.push([]);
+    for (let j = 0; j < nv; j++) H[i].push(isHole((i + 0.5) / nu, (j + 0.5) / nv * TAU));
+  }
+  // Bords francs : les deux anneaux d'extremite restent pleins.
+  for (let j = 0; j < nv; j++) { H[0][j] = false; H[1][j] = false; H[nu - 1][j] = false; H[nu - 2][j] = false; }
+  // Colliers pleins : la membrane se referme la ou elle rejoint les citernes terminales.
+  (o.solid || []).forEach(sd => {
+    for (let i = 0; i < nu; i++) {
+      if (Math.abs((i + 0.5) / nu - sd[0]) > sd[1]) continue;
+      for (let j = 0; j < nv; j++) H[i][j] = false;
+    }
+  });
+
+  const tri3 = (A, B, C, n) => {
+    pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+    for (let k = 0; k < 3; k++) nor.push(n[0], n[1], n[2]);
+  };
+  const sheet = (i, j, s) => {
+    const u0 = i / nu, u1 = (i + 1) / nu, a0 = j / nv * TAU, a1 = (j + 1) / nv * TAU;
+    const A = P(u0, a0, s), B = P(u1, a0, s), C = P(u1, a1, s), D = P(u0, a1, s);
+    const n0 = [0, s * Math.cos(a0), s * Math.sin(a0)], n1 = [0, s * Math.cos(a1), s * Math.sin(a1)];
+    pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+    nor.push(n0[0], n0[1], n0[2], n0[0], n0[1], n0[2], n1[0], n1[1], n1[2]);
+    pos.push(A[0], A[1], A[2], C[0], C[1], C[2], D[0], D[1], D[2]);
+    nor.push(n0[0], n0[1], n0[2], n1[0], n1[1], n1[2], n1[0], n1[1], n1[2]);
+  };
+  const rim = (ua, aa, ub, ab) => {
+    const A = P(ua, aa, 1), B = P(ub, ab, 1), C = P(ub, ab, -1), D = P(ua, aa, -1);
+    const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2];
+    const vx = D[0] - A[0], vy = D[1] - A[1], vz = D[2] - A[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nzz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nzz) || 1;
+    const n = [nx / l, ny / l, nzz / l];
+    tri3(A, B, C, n); tri3(A, C, D, n);
+  };
+
+  for (let i = 0; i < nu; i++) {
+    for (let j = 0; j < nv; j++) {
+      if (H[i][j]) continue;
+      sheet(i, j, 1); sheet(i, j, -1);
+      const u0 = i / nu, u1 = (i + 1) / nu, a0 = j / nv * TAU, a1 = (j + 1) / nv * TAU;
+      const jm = (j - 1 + nv) % nv, jp = (j + 1) % nv;
+      if (i === 0 || H[i - 1][j]) rim(u0, a1, u0, a0);
+      if (i === nu - 1 || H[i + 1][j]) rim(u1, a0, u1, a1);
+      if (H[i][jm]) rim(u0, a0, u1, a0);
+      if (H[i][jp]) rim(u1, a1, u0, a1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  return g;
 }
 /* étiquette lisible sous tous les angles : une texture de texte sur un sprite */
 function labelSprite(text, color) {
@@ -695,8 +797,84 @@ const SARCO = (() => {
     return grp;
   });
 
+  /* --- réticulum sarcoplasmique -------------------------------------------
+     Le RS n'est pas une pièce du sarcomère : c'est un organite à part, un manchon
+     de membranes qui enveloppe la myofibrille — il y en a donc autour de CHAQUE
+     sarcomère, dans le muscle squelettique comme dans le cardiaque. Même
+     construction que la strate « sarcomère » de cellule-musculaire.html.
+
+     Trois pièces, parce qu'elles ne bougent pas de la même façon : le manchon de
+     la bande A garde sa longueur — les filaments épais ne bougent pas — et les
+     deux manchons de bande I se compriment avec elle, exactement comme la titine
+     juste au-dessus. Les triades, elles, restent à la jonction des bandes A et I :
+     c'est un repère fixe, puisque c'est le bord du filament épais. À la contraction
+     maximale la strie Z vient donc les frôler, et la bande I a disparu.          */
+  const RS_R = 0.9;
+  const rsMat = mat(COL.rs, { roughness: 0.5, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false });
+  g.add(new THREE.Mesh(fenestra({
+    x0: -MHALF, x1: MHALF, rad: RS_R, th: 0.05, nu: 66, nv: 30,
+    fx: 3.6, fa: 3.2, thr: -0.25, solid: [[0.02, 0.05], [0.98, 0.05]]
+  }), rsMat));
+  const rsI = [-1, 1].map(sgn => {
+    const m = new THREE.Mesh(fenestra({
+      x0: 0, x1: L0, rad: RS_R, th: 0.05, nu: 26, nv: 30,
+      fx: 3.6, fa: 3.2, thr: -0.25, solid: [[0.02, 0.06]]
+    }), rsMat);
+    m.position.x = sgn * MHALF;
+    m.userData.sgn = sgn;
+    g.add(m);
+    return m;
+  });
+
+  /* --- triades : deux citernes terminales encadrant un tubule transverse ---
+     Deux par sarcomère, à la jonction des bandes A et I : c'est la disposition du
+     muscle squelettique. Le cardiaque n'en a qu'une, sur la strie Z, avec une seule
+     citerne — une dyade. Le tubule T n'appartient pas au réticulum : c'est une
+     invagination du sarcolemme, d'où sa couleur à part.                          */
+  const TRI_R = RS_R + 0.06;
+  const cisMat = mat(COL.citerne, { roughness: 0.4, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
+  const ttMat = mat(COL.tubuleT, { roughness: 0.42, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+  [-1, 1].forEach(sgn => {
+    [-0.17, 0.17].forEach(dx => {
+      const ci = new THREE.Mesh(new THREE.TorusGeometry(TRI_R, 0.1, 10, 44), cisMat);
+      ci.rotation.y = Math.PI / 2;
+      ci.position.x = sgn * MHALF + dx;
+      g.add(ci);
+    });
+    const tt = new THREE.Mesh(new THREE.TorusGeometry(TRI_R, 0.055, 9, 44), ttMat);
+    tt.rotation.y = Math.PI / 2;
+    tt.position.x = sgn * MHALF;
+    g.add(tt);
+  });
+
+  /* --- le calcium : enfermé au repos, dehors pendant la secousse -----------
+     Chaque ion a deux adresses : sa place dans une citerne terminale, et une cible
+     sur les filaments minces — la troponine, qu'on ne modélise pas à cette échelle.
+     Une seule variable les fait passer de l'une à l'autre, et le décalage propre à
+     chaque ion évite qu'ils partent tous au même instant.                        */
+  const CA_N = 60;
+  const caIons = [];
+  for (let i = 0; i < CA_N; i++) {
+    const sgn = i % 2 ? 1 : -1;
+    const a0 = (i * 2.399) % (Math.PI * 2);            // pas d'or : réparti sans motif visible
+    const a1 = a0 + 0.7;
+    const rr = 0.42 + ((i * 37) % 100) / 100 * 0.44;   // couronne visible entre les filaments et le manchon
+    caIons.push({
+      hx: sgn * MHALF + (i % 4 < 2 ? -0.17 : 0.17),
+      hy: Math.cos(a0) * TRI_R, hz: Math.sin(a0) * TRI_R,
+      tx: sgn * (0.32 + ((i * 53) % 100) / 100 * 0.8),
+      ty: Math.cos(a1) * rr, tz: Math.sin(a1) * rr,
+      lag: ((i * 29) % 100) / 100 * 0.4
+    });
+  }
+  const caMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.037, 8, 6),
+    mat(COL.calcium, { roughness: 0.3, emissive: 0x1f6f4c, emissiveIntensity: 0.5 }),
+    CA_N);
+  g.add(caMesh);
+
   /* --- mise à jour : une seule variable, la contraction c ∈ [0,1] --------- */
-  function update(c, phase) {
+  function update(c, phase, ca) {
     const zx = lerp(Z0, ZMIN, c);
     zDiscs.forEach(m => { m.position.x = m.userData.sgn * zx; });
     // le filament mince garde sa longueur : c'est son CENTRE qui avance
@@ -716,6 +894,17 @@ const SARCO = (() => {
       headMesh.setMatrixAt(i, _m4);
     });
     headMesh.instanceMatrix.needsUpdate = true;
+    // le manchon de bande I se comprime avec elle — même geste que la titine
+    rsI.forEach(m => { m.scale.x = m.userData.sgn * Math.max(0.04, (zx - MHALF) / L0); });
+    // le calcium : dans les citernes (ca = 0), sur les filaments minces (ca = 1)
+    _q.identity();
+    caIons.forEach((ion, i) => {
+      const k = smooth((ca - ion.lag) / (1 - ion.lag));
+      _v.set(lerp(ion.hx, ion.tx, k), lerp(ion.hy, ion.ty, k), lerp(ion.hz, ion.tz, k));
+      _m4.compose(_v, _q, _s);
+      caMesh.setMatrixAt(i, _m4);
+    });
+    caMesh.instanceMatrix.needsUpdate = true;
     return { zx, aLen: ALEN, mHalf: MHALF };
   }
 
@@ -1025,11 +1214,11 @@ scene.add(PONT.group);
 const ETATS = [
   {
     seuil: 0.04, kick: 'état 1 sur 3', titre: 'Muscle relâché',
-    txt: "Au repos, les filaments minces ne recouvrent que les extrémités des filaments épais. La bande I — la partie du sarcomère où l'actine est seule — est à son maximum."
+    txt: "Au repos, les filaments minces ne recouvrent que les extrémités des filaments épais. La bande I — la partie du sarcomère où l'actine est seule — est à son maximum. Le calcium, lui, est enfermé dans les citernes terminales du réticulum sarcoplasmique, de part et d'autre des tubules transverses."
   },
   {
     seuil: 0.9, kick: 'état 2 sur 3', titre: 'Muscle en contraction',
-    txt: "Les têtes de myosine tirent les filaments minces vers le centre du sarcomère. Les stries Z se rapprochent, la bande I se réduit — mais aucun filament ne raccourcit."
+    txt: "Le réticulum a libéré son calcium, qui découvre les sites de liaison de l'actine : les têtes de myosine tirent alors les filaments minces vers le centre du sarcomère. Les stries Z se rapprochent, la bande I se réduit — mais aucun filament ne raccourcit."
   },
   {
     seuil: 1.01, kick: 'état 3 sur 3', titre: 'Muscle complètement contracté',
@@ -1103,6 +1292,7 @@ function setScene(n) {
   el('tab1').setAttribute('aria-selected', n === 1 ? 'true' : 'false');
   el('schema').style.display = n === 0 ? '' : 'none';
   el('keyMol').style.display = n === 1 ? 'flex' : 'none';
+  el('keySR').style.display = n === 0 ? 'flex' : 'none';   // le réticulum n'est modélisé qu'à l'échelle du sarcomère
   el('meas').style.display = '';
   // les trois mesures ne disent pas la même chose d'une scène à l'autre
   el('t1').textContent = n === 0 ? 'Bande A · myosine' : 'Un coup de rame';
@@ -1275,7 +1465,12 @@ function loop(now) {
     // aller puis retour : 0→1 on se contracte, 1→2 on se relâche
     const relache = t > 1;
     const c = Math.max(0, Math.min(1, relache ? 2 - t : t));
-    SARCO.update(c, phase);
+    // Le calcium sort des citernes au tout début de la secousse et n'y revient qu'au
+    // relâchement : c'est lui qui commande la contraction, pas l'inverse. Le retour se
+    // cale sur le premier des deux temps de relâchement (« Le calcium regagne le
+    // réticulum »), qui bascule à t - 1 = 0,55.
+    const ca = t < 1 ? smooth(t / 0.18) : 1 - smooth((t - 1) / 0.55);
+    SARCO.update(c, phase, ca);
     drawSchema(c);
     const e = relache
       ? (RELACHE.find(s => (t - 1) < s.seuil) || RELACHE[1])
